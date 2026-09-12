@@ -1,5 +1,14 @@
 import { supabase, isSupabaseConfigured } from '../supabaseClient'
-import { findUserByPhone, saveUser, getRegisteredWorkers, getPostedJobs, savePostedJob } from '../data/userStore'
+import {
+  findUserByPhone,
+  saveUser,
+  getRegisteredWorkers,
+  getPostedJobs,
+  savePostedJob,
+  getStoredApplications,
+  saveStoredApplication,
+  updateStoredApplicationStatus
+} from '../data/userStore'
 import {
   INITIAL_JOBS,
   AVAILABLE_WORKERS,
@@ -51,17 +60,30 @@ export function mapJobRecord(dbJob) {
   const metaEmployer = skillsList.find(s => s.startsWith('meta:employer='))?.replace('meta:employer=', '')
   const metaContact = skillsList.find(s => s.startsWith('meta:contact='))?.replace('meta:contact=', '')
   const metaPhone = skillsList.find(s => s.startsWith('meta:phone='))?.replace('meta:phone=', '')
+  const metaEmail = skillsList.find(s => s.startsWith('meta:email='))?.replace('meta:email=', '')
   const metaTitleEn = skillsList.find(s => s.startsWith('meta:titleEn='))?.replace('meta:titleEn=', '')
   const metaTitleHi = skillsList.find(s => s.startsWith('meta:titleHi='))?.replace('meta:titleHi=', '')
   const metaStartDate = skillsList.find(s => s.startsWith('meta:startDate='))?.replace('meta:startDate=', '')
 
-  const cleanSkills = skillsList.filter(s => !s.startsWith('meta:'))
+  const cleanSkills = skillsList.filter(s => !s.startsWith('meta:') && !s.startsWith('applicant:'))
 
   const wageVal = Number(dbJob.wage_offered || dbJob.wage || dbJob.salary || dbJob.daily_wage || 800)
   const peopleNeeded = Number(dbJob.num_laborers_required || dbJob.count || dbJob.peopleNeeded || 1)
   const employerName = metaEmployer || dbJob.employer || dbJob.contactPerson || dbJob.users?.name || 'Site Employer'
   const contactName = metaContact || dbJob.contactPerson || employerName || 'Site Supervisor'
   const phoneVal = metaPhone || dbJob.contactPhone || (dbJob.users?.phone_number ? `+91 ${dbJob.users.phone_number}` : '+91 98201 54321')
+  const emailVal = metaEmail || dbJob.contactEmail || dbJob.employerEmail || ''
+
+  const applicantsList = skillsList
+    .filter(s => s.startsWith('applicant:'))
+    .map(s => {
+      try {
+        return JSON.parse(s.slice('applicant:'.length))
+      } catch {
+        return null
+      }
+    })
+    .filter(Boolean)
 
   return {
     id: dbJob.id,
@@ -73,6 +95,8 @@ export function mapJobRecord(dbJob) {
     employer: employerName,
     contactPerson: contactName,
     contactPhone: phoneVal,
+    contactEmail: emailVal,
+    employerEmail: emailVal,
     place: dbJob.location || dbJob.place || 'Mumbai',
     wage: wageVal,
     referenceWage: Math.max(500, wageVal - 40),
@@ -83,6 +107,7 @@ export function mapJobRecord(dbJob) {
     workingHours: dbJob.working_hours || dbJob.workingHours || '8:30 AM – 5:30 PM (8 hrs)',
     workingHoursHi: dbJob.working_hours || dbJob.workingHoursHi || 'सुबह 8:30 – शाम 5:30 (8 घंटे)',
     peopleNeeded,
+    applicants: applicantsList,
     requirements: cleanSkills.length > 0
       ? cleanSkills.map(s => ({ trade: s, count: 1 }))
       : (Array.isArray(dbJob.requirements) && dbJob.requirements.length > 0
@@ -421,6 +446,7 @@ export async function createJob(jobData) {
       `meta:employer=${jobData.employer || jobData.contactPerson || 'Site Employer'}`,
       `meta:contact=${jobData.contactPerson || 'Site Supervisor'}`,
       `meta:phone=${jobData.contactPhone || '+91 98201 54321'}`,
+      `meta:email=${jobData.contactEmail || jobData.employerEmail || ''}`,
       `meta:titleEn=${jobData.titleEn || ''}`,
       `meta:titleHi=${jobData.titleHi || ''}`,
       `meta:startDate=${jobData.startDate || ''}`
@@ -484,107 +510,186 @@ export async function createJob(jobData) {
 // 3. APPLICATIONS APIS
 // ============================================================================
 
-export async function submitApplication(jobId, workerId, workerData) {
-  if (isSupabaseConfigured() && supabase && workerId) {
-    try {
-      const { data, error } = await supabase
-        .from('applications')
-        .insert({
-          job_id: jobId,
-          worker_id: workerId,
-          status: 'pending'
-        })
-        .select()
-        .single()
-
-      if (error) throw error
-      return { success: true, data }
-    } catch (err) {
-      console.warn('Supabase submitApplication failed, storing locally:', err.message)
-    }
-  }
-
+export async function submitApplication(jobId, workerId, workerData, jobDetails = {}) {
+  const appId = `app_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
   const localApp = {
-    id: Date.now(),
-    jobId,
-    jobTitleEn: workerData?.jobTitleEn || 'Active Job',
-    jobTitleHi: workerData?.jobTitleHi || 'सक्रिय कार्य',
-    workerName: workerData?.name || 'Raju Kumar',
-    phone: workerData?.phone ? `+91 ${workerData.phone}` : '+91 98765 43210',
-    trade: workerData?.expertise || 'Masonry',
-    tradeHi: 'राजमिस्त्री',
-    experience: workerData?.experience || '5 Years',
-    experienceHi: '5 वर्ष',
-    location: workerData?.location || 'Andheri West, Mumbai',
-    locationHi: 'अंधेरी, मुंबई',
-    languages: workerData?.languages || 'Hindi, Marathi',
-    languagesHi: 'हिंदी, मराठी',
-    skills: workerData?.skills || ['Masonry', 'Plastering'],
+    id: appId,
+    jobId: String(jobId || ''),
+    jobTitleEn: jobDetails?.titleEn || workerData?.jobTitleEn || 'Active Job',
+    jobTitleHi: jobDetails?.titleHi || workerData?.jobTitleHi || 'सक्रिय कार्य',
+    employer: jobDetails?.employer || jobDetails?.contactPerson || 'Site Employer',
+    employerEmail: jobDetails?.contactEmail || jobDetails?.employerEmail || '',
+    workerName: workerData?.name || 'Applicant',
+    phone: workerData?.phone ? (String(workerData.phone).startsWith('+91') ? workerData.phone : `+91 ${workerData.phone}`) : '+91 98765 43210',
+    trade: workerData?.expertise || workerData?.tradeEn || jobDetails?.tradeEn || 'General Labor',
+    tradeHi: workerData?.tradeHi || jobDetails?.tradeHi || 'कारीगर',
+    experience: workerData?.experience || '3 Years',
+    experienceHi: workerData?.experienceHi || '3 वर्ष',
+    location: workerData?.location || jobDetails?.place || 'Mumbai',
+    locationHi: workerData?.locationHi || 'मुंबई',
+    languages: workerData?.languages || 'Hindi',
+    languagesHi: workerData?.languagesHi || 'हिंदी',
+    skills: workerData?.skills || [jobDetails?.tradeEn || 'General Labor'],
     appliedAt: 'Just now',
     appliedAtHi: 'अभी-अभी',
-    status: 'pending'
+    status: 'pending',
+    paymentStatus: 'unpaid'
+  }
+
+  // 1. Instant local persistence for 0ms rendering
+  saveStoredApplication(localApp)
+
+  // 2. Persist to Supabase Cloud Database via job's required_skills
+  if (isSupabaseConfigured() && supabase && jobId) {
+    try {
+      const { data: currentJob, error: fetchErr } = await supabase
+        .from('jobs')
+        .select('*')
+        .eq('id', jobId)
+        .maybeSingle()
+
+      if (!fetchErr && currentJob) {
+        const existingSkills = Array.isArray(currentJob.required_skills) ? currentJob.required_skills : []
+        const applicantTag = `applicant:${JSON.stringify(localApp)}`
+        const updatedSkills = [...existingSkills.filter(s => !s.startsWith(`applicant:{"id":"${appId}"`)), applicantTag]
+
+        await supabase
+          .from('jobs')
+          .update({ required_skills: updatedSkills })
+          .eq('id', jobId)
+
+        console.log('[Supabase submitApplication] Cloud sync confirmed for job:', jobId)
+      }
+    } catch (err) {
+      console.warn('[Supabase submitApplication] Cloud sync notice:', err.message)
+    }
   }
 
   return { success: true, data: localApp }
 }
 
-export async function fetchContractorApplications(contractorId) {
+export async function fetchContractorApplications(contractorId, employerName) {
+  const localApps = getStoredApplications()
+  const remoteApps = []
+
+  // 1. Fetch from Supabase Cloud Database jobs
   if (isSupabaseConfigured() && supabase) {
     try {
-      let query = supabase
-        .from('applications')
-        .select('*, jobs!inner(*), users!applications_worker_id_fkey(*, worker_profiles(*))')
-        .order('applied_at', { ascending: false })
+      const { data: jobs, error } = await supabase
+        .from('jobs')
+        .select('*')
+        .order('created_at', { ascending: false })
 
-      if (contractorId) {
-        query = query.eq('jobs.contractor_id', contractorId)
-      }
+      if (!error && Array.isArray(jobs)) {
+        for (const j of jobs) {
+          const mapped = mapJobRecord(j)
+          const skills = Array.isArray(j.required_skills) ? j.required_skills : []
+          const applicantTags = skills.filter(s => s.startsWith('applicant:'))
 
-      const { data, error } = await query
-
-      if (error) throw error
-      if (data && data.length > 0) {
-        const formatted = data.map(app => ({
-          id: app.id,
-          jobId: app.job_id,
-          jobTitleEn: `${app.jobs?.job_type || 'Trade'} Work`,
-          jobTitleHi: `${app.jobs?.job_type || 'काम'}`,
-          workerName: app.users?.name || 'Applicant',
-          phone: app.users?.phone_number ? `+91 ${app.users.phone_number}` : '+91 98765 43210',
-          trade: app.users?.worker_profiles?.[0]?.expertise || 'Masonry',
-          tradeHi: 'कारीगर',
-          experience: app.users?.worker_profiles?.[0]?.work_experience || '3 Years',
-          experienceHi: '3 वर्ष',
-          location: app.users?.location || 'Mumbai',
-          locationHi: 'मुंबई',
-          languages: (app.users?.worker_profiles?.[0]?.spoken_languages || ['Hindi']).join(', '),
-          languagesHi: 'हिंदी',
-          skills: app.users?.worker_profiles?.[0]?.skills || ['General Labor'],
-          appliedAt: 'Recently',
-          appliedAtHi: 'हाल ही में',
-          status: app.status || 'pending'
-        }))
-        return { success: true, data: formatted }
+          for (const tag of applicantTags) {
+            try {
+              const rawJson = tag.slice('applicant:'.length)
+              const appData = JSON.parse(rawJson)
+              remoteApps.push({
+                ...appData,
+                jobId: j.id,
+                jobTitleEn: mapped?.titleEn || `${mapped?.tradeEn || 'Trade'} Work`,
+                jobTitleHi: mapped?.titleHi || `${mapped?.tradeHi || 'काम'}`,
+                employer: mapped?.employer || appData.employer || 'Site Employer',
+                employerEmail: mapped?.contactEmail || appData.employerEmail || '',
+                wage: mapped?.wage || 850
+              })
+            } catch {
+              // ignore malformed
+            }
+          }
+        }
       }
     } catch (err) {
-      console.warn('Supabase fetchContractorApplications failed, using local list:', err.message)
+      console.warn('[Supabase fetchContractorApplications] Notice:', err.message)
     }
   }
 
-  return { success: true, data: INITIAL_APPLICATIONS }
+  // 2. Combine and deduplicate
+  const allApps = [...remoteApps, ...localApps]
+  const uniqueMap = new Map()
+  for (const app of allApps) {
+    if (app && app.id) {
+      uniqueMap.set(String(app.id), app)
+    }
+  }
+
+  // Also include initial mock applications if not shadowed
+  for (const initApp of INITIAL_APPLICATIONS) {
+    if (!uniqueMap.has(String(initApp.id))) {
+      uniqueMap.set(String(initApp.id), initApp)
+    }
+  }
+
+  const combined = Array.from(uniqueMap.values())
+
+  // 3. Prioritize matches for this contractor or employer
+  if (contractorId || employerName) {
+    const cleanPoster = String(employerName || '').toLowerCase().trim()
+    const matched = combined.filter(app => {
+      const appEmp = String(app.employer || '').toLowerCase().trim()
+      if (cleanPoster && (appEmp.includes(cleanPoster) || cleanPoster.includes(appEmp))) {
+        return true
+      }
+      if (contractorId && (String(app.contractorId) === String(contractorId) || String(app.contractor_id) === String(contractorId))) {
+        return true
+      }
+      return false
+    })
+
+    if (matched.length > 0) {
+      const remaining = combined.filter(a => !matched.some(m => String(m.id) === String(a.id)))
+      return { success: true, data: [...matched, ...remaining] }
+    }
+  }
+
+  return { success: true, data: combined }
 }
 
-export async function updateApplicationStatus(applicationId, newStatus) {
-  if (isSupabaseConfigured() && supabase) {
-    try {
-      const { error } = await supabase
-        .from('applications')
-        .update({ status: newStatus })
-        .eq('id', applicationId)
+export async function updateApplicationStatus(applicationId, newStatus, extra = {}) {
+  // 1. Update in local storage
+  updateStoredApplicationStatus(applicationId, newStatus, extra)
 
-      if (error) throw error
+  // 2. Update in Supabase cloud database
+  if (isSupabaseConfigured() && supabase && applicationId) {
+    try {
+      const { data: jobs, error } = await supabase
+        .from('jobs')
+        .select('*')
+
+      if (!error && Array.isArray(jobs)) {
+        for (const j of jobs) {
+          const skills = Array.isArray(j.required_skills) ? j.required_skills : []
+          const matchingIdx = skills.findIndex(s => s.startsWith('applicant:') && s.includes(`"id":"${applicationId}"`))
+
+          if (matchingIdx !== -1) {
+            try {
+              const parsed = JSON.parse(skills[matchingIdx].slice('applicant:'.length))
+              parsed.status = newStatus
+              parsed.paymentStatus = newStatus === 'accepted' ? 'paid' : parsed.paymentStatus
+              parsed.updatedAt = new Date().toISOString()
+              const updatedSkills = [...skills]
+              updatedSkills[matchingIdx] = `applicant:${JSON.stringify(parsed)}`
+
+              await supabase
+                .from('jobs')
+                .update({ required_skills: updatedSkills })
+                .eq('id', j.id)
+
+              console.log('[Supabase updateApplicationStatus] Cloud status updated for app:', applicationId)
+            } catch {
+              // ignore
+            }
+          }
+        }
+      }
     } catch (err) {
-      console.warn('Supabase updateApplicationStatus failed:', err.message)
+      console.warn('[Supabase updateApplicationStatus] Notice:', err.message)
     }
   }
 

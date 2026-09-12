@@ -1,5 +1,5 @@
 // Persistent User Database and Profile Store using localStorage
-import { AVAILABLE_WORKERS } from './mockData'
+import { AVAILABLE_WORKERS, INITIAL_APPLICATIONS } from './mockData'
 
 const STORAGE_KEY = 'kaamsetu_users_db'
 const SESSION_KEY = 'kaamsetu_active_session'
@@ -284,6 +284,79 @@ export function updateBookingStatus(bookingId, newStatus, newEmail) {
     return updated
   } catch (err) {
     console.error('Error updating booking status:', err)
+    return []
+  }
+}
+
+// -----------------------------------------------------------------------------
+// APPLICATIONS STORE (Persistent job applications for Contractors and Employers)
+// -----------------------------------------------------------------------------
+const APPLICATIONS_KEY = 'kaamsetu_applications'
+
+export function getStoredApplications() {
+  try {
+    const raw = localStorage.getItem(APPLICATIONS_KEY)
+    if (!raw) {
+      localStorage.setItem(APPLICATIONS_KEY, JSON.stringify(INITIAL_APPLICATIONS))
+      return INITIAL_APPLICATIONS
+    }
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : INITIAL_APPLICATIONS
+  } catch {
+    return INITIAL_APPLICATIONS
+  }
+}
+
+export function saveStoredApplication(application) {
+  try {
+    const existing = getStoredApplications()
+    const filtered = existing.filter(a => String(a.id) !== String(application.id))
+    const updated = [application, ...filtered]
+    localStorage.setItem(APPLICATIONS_KEY, JSON.stringify(updated))
+
+    try {
+      const bc = new BroadcastChannel('kaamsetu_applications_channel')
+      bc.postMessage({ type: 'APPLICATION_UPDATED', application })
+      bc.close()
+    } catch {
+      // BroadcastChannel optional
+    }
+
+    return updated
+  } catch (err) {
+    console.error('Error saving application:', err)
+    return []
+  }
+}
+
+export function updateStoredApplicationStatus(applicationId, newStatus, extra = {}) {
+  try {
+    const existing = getStoredApplications()
+    const updated = existing.map(app => {
+      if (String(app.id) === String(applicationId)) {
+        return {
+          ...app,
+          status: newStatus,
+          paymentStatus: newStatus === 'accepted' ? 'paid' : app.paymentStatus,
+          updatedAt: new Date().toISOString(),
+          ...extra
+        }
+      }
+      return app
+    })
+    localStorage.setItem(APPLICATIONS_KEY, JSON.stringify(updated))
+
+    try {
+      const bc = new BroadcastChannel('kaamsetu_applications_channel')
+      bc.postMessage({ type: 'APPLICATION_STATUS_CHANGED', applicationId, newStatus })
+      bc.close()
+    } catch {
+      // BroadcastChannel optional
+    }
+
+    return updated
+  } catch (err) {
+    console.error('Error updating application status:', err)
     return []
   }
 }

@@ -1474,8 +1474,20 @@ function WorkerDashboard({ user, jobs, sites, onApplyJob, onRefreshJobs, languag
 
   const handleApply = (job) => {
     onApplyJob(job)
-    setToastMsg(`${job.employer}: ${t('applicationSent', language)}`)
-    setTimeout(() => setToastMsg(''), 4000)
+    const posterEmail = (job.contactEmail || job.employerEmail || getSavedTestEmail() || 'naikgaonkarvineet@gmail.com').trim()
+    saveTestEmail(posterEmail)
+
+    // Trigger automated confirmation email to the job poster via n8n webhook
+    notifyWorkerAccepted({
+      customerName: job.contactPerson || job.employer || 'Site Employer',
+      customerEmail: posterEmail,
+      workerName: user.name || 'Worker',
+      service: isEn ? (job.titleEn || job.tradeEn || 'Work Application') : (job.titleHi || job.tradeHi || 'काम आवेदन'),
+      scheduledFor: job.startDate || new Date().toISOString().slice(0, 10)
+    }).catch(err => console.warn('Worker application notification email error:', err))
+
+    setToastMsg(isEn ? `Application confirmed! Email sent to ${job.employer || 'employer'} (${posterEmail})` : `आवेदन पक्का हुआ! ${job.employer || 'नियोक्ता'} (${posterEmail}) को ईमेल भेजा गया`)
+    setTimeout(() => setToastMsg(''), 5000)
   }
 
   return (
@@ -1980,16 +1992,17 @@ function WorkerDashboard({ user, jobs, sites, onApplyJob, onRefreshJobs, languag
 }
 
 // 6. POST NEW JOB FORM COMPONENT
-function PostJobScreen({ onCancel, onSaveJob, language }) {
+function PostJobScreen({ onCancel, onSaveJob, language, currentUser }) {
   const isEn = language === 'en'
 
   const [trade, setTrade] = useState('masonry')
-  const [location, setLocation] = useState('Andheri West, Mumbai')
+  const [location, setLocation] = useState(() => currentUser?.location || 'Andheri West, Mumbai')
   const [wage, setWage] = useState(850)
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [hours, setHours] = useState('8:30 AM – 5:30 PM (8 hrs)')
-  const [contactName, setContactName] = useState('Shiv Kumar Sharma')
-  const [contactPhone, setContactPhone] = useState('+91 98201 54321')
+  const [contactName, setContactName] = useState(() => currentUser?.name || 'Shiv Kumar Sharma')
+  const [contactPhone, setContactPhone] = useState(() => currentUser?.phone || '+91 98201 54321')
+  const [contactEmail, setContactEmail] = useState(() => currentUser?.email || getSavedTestEmail() || 'naikgaonkarvineet@gmail.com')
   const [urgent, setUrgent] = useState(true)
 
   const [requirements, setRequirements] = useState([
@@ -2012,6 +2025,9 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
   }
 
   const handleSubmit = () => {
+    const cleanEmail = contactEmail.trim()
+    saveTestEmail(cleanEmail)
+
     const newJob = {
       id: getNextId(),
       titleEn: `${trade.charAt(0).toUpperCase() + trade.slice(1)} Required`,
@@ -2019,9 +2035,11 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
       tradeId: trade.toLowerCase(),
       tradeEn: trade.charAt(0).toUpperCase() + trade.slice(1),
       tradeHi: t(trade, 'hi'),
-      employer: contactName || 'Site Employer',
-      contactPerson: contactName || 'Site Supervisor',
-      contactPhone: contactPhone || '+91 98201 54321',
+      employer: contactName || currentUser?.name || 'Site Employer',
+      contactPerson: contactName || currentUser?.name || 'Site Supervisor',
+      contactPhone: contactPhone || currentUser?.phone || '+91 98201 54321',
+      contactEmail: cleanEmail,
+      employerEmail: cleanEmail,
       place: location || 'Mumbai',
       wage: Number(wage) || 800,
       referenceWage: 780,
@@ -2127,6 +2145,22 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
       </div>
 
       <div className="form-group">
+        <label>{isEn ? 'Notification Email (Receives Application Confirmation) *' : 'अधिसूचना ईमेल (आवेदन पुष्टि प्राप्त करने हेतु) *'}</label>
+        <input
+          type="email"
+          className="form-control"
+          value={contactEmail}
+          onChange={e => setContactEmail(e.target.value)}
+          placeholder="e.g. yourname@gmail.com"
+          required
+        />
+        <p className="form-hint">
+          <Mail size={12} />
+          <span>{isEn ? 'Confirmation emails will be sent here when workers apply' : 'मज़दूरों के आवेदन की पुष्टि इस ईमेल पर भेजी जाएगी'}</span>
+        </p>
+      </div>
+
+      <div className="form-group">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <label style={{ margin: 0 }}>{t('laborRequirements', language)}</label>
           <button
@@ -2218,15 +2252,31 @@ function ContractorDashboard({ user, onAddJob, workersList: propWorkersList, lan
         createdAt: new Date().toISOString(),
         location: selectedWorkerForBooking.location || 'Mumbai'
       })
+
+      // Add to contractor's crew list so contractor immediately sees the booked worker
+      const bookedCrewMember = {
+        id: 'crew-book-' + Date.now(),
+        name: selectedWorkerForBooking.name,
+        tradeEn: selectedWorkerForBooking.tradeEn || selectedWorkerForBooking.trade || 'Worker',
+        tradeHi: selectedWorkerForBooking.tradeHi || 'कारीगर',
+        phone: selectedWorkerForBooking.phone || '+91 98765 00000',
+        dailyWage: selectedWorkerForBooking.dailyWage || 850,
+        isBooked: true,
+        scheduledFor: payload.scheduledFor,
+        verified: true
+      }
+      setCrew(prev => [bookedCrewMember, ...prev])
+      addCrewMember(user?.id, bookedCrewMember).catch(() => {})
     }
-    setToastMsg(t('bookingSuccessToast', language))
-    setTimeout(() => setToastMsg(''), 4500)
+    const contractorEmail = (payload?.customerEmail || user?.email || getSavedTestEmail() || 'contractor@kaamsetu.in').trim()
+    setToastMsg(isEn ? `Worker booked! Confirmation email sent to ${contractorEmail}` : `कारीगर बुक किया गया! ${contractorEmail} पर पुष्टि ईमेल भेजा गया`)
+    setTimeout(() => setToastMsg(''), 5000)
   }
 
   useEffect(() => {
     async function loadContractorData() {
       try {
-        const appsRes = await fetchContractorApplications(user?.id)
+        const appsRes = await fetchContractorApplications(user?.id, user?.name)
         if (appsRes.success && appsRes.data) {
           setApplications(appsRes.data)
         }
@@ -2235,11 +2285,33 @@ function ContractorDashboard({ user, onAddJob, workersList: propWorkersList, lan
           setCrew(crewRes.data)
         }
       } catch (err) {
-        console.warn('Error loading contractor data from Supabase:', err)
+        console.warn('Error loading contractor data:', err)
       }
     }
     loadContractorData()
-  }, [user?.id])
+
+    let bc
+    try {
+      bc = new BroadcastChannel('kaamsetu_applications_channel')
+      bc.onmessage = () => {
+        loadContractorData()
+      }
+    } catch {
+      // ignore
+    }
+
+    const handleStorage = (e) => {
+      if (e.key === 'kaamsetu_applications') {
+        loadContractorData()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      if (bc) bc.close()
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [user?.id, user?.name, contractorTab])
 
   // Add Worker Modal (Single button, no duplicates)
   const [addWorkerOpen, setAddWorkerOpen] = useState(false)
@@ -2283,24 +2355,22 @@ function ContractorDashboard({ user, onAddJob, workersList: propWorkersList, lan
   }
 
   const handleUpdateApplicationStatus = async (appId, status) => {
-    setApplications(applications.map(app => app.id === appId ? { ...app, status, paymentStatus: 'paid', wage: app.wage || 850 } : app))
+    setApplications(prev => prev.map(app => String(app.id) === String(appId) ? { ...app, status, paymentStatus: 'paid', wage: app.wage || 850 } : app))
     const isAccepted = status === 'accepted'
 
     if (isAccepted) {
-      const targetApp = applications.find(a => a.id === appId)
-      if (targetApp) {
-        const recipientEmail = user?.email || getSavedTestEmail() || 'contractor@kaamsetu.in'
-        setToastMsg(`${t('workerAcceptedWebhookToast', language)} (${recipientEmail})`)
-        setTimeout(() => setToastMsg(''), 5000)
+      const targetApp = applications.find(a => String(a.id) === String(appId))
+      const recipientEmail = (user?.email || targetApp?.employerEmail || getSavedTestEmail() || 'contractor@kaamsetu.in').trim()
+      setToastMsg(`${t('workerAcceptedWebhookToast', language)} (${recipientEmail})`)
+      setTimeout(() => setToastMsg(''), 5000)
 
-        notifyWorkerAccepted({
-          customerName: user?.name || 'Shiv Kumar Sharma',
-          customerEmail: recipientEmail,
-          workerName: targetApp.workerName || 'Worker',
-          service: targetApp.trade || targetApp.jobTitleEn || 'Construction & Masonry',
-          scheduledFor: '2026-09-20 10:00'
-        }).catch(err => console.warn('Worker accepted webhook error:', err))
-      }
+      notifyWorkerAccepted({
+        customerName: user?.name || 'Contractor',
+        customerEmail: recipientEmail,
+        workerName: targetApp?.workerName || 'Worker',
+        service: targetApp?.trade || targetApp?.jobTitleEn || 'Construction & Masonry',
+        scheduledFor: '2026-09-20 10:00'
+      }).catch(err => console.warn('Worker accepted webhook error:', err))
     } else {
       setToastMsg(t('applicantRejectedToast', language))
       setTimeout(() => setToastMsg(''), 4500)
@@ -2309,7 +2379,7 @@ function ContractorDashboard({ user, onAddJob, workersList: propWorkersList, lan
     try {
       await updateApplicationStatus(appId, status)
     } catch (err) {
-      console.warn('Error updating application status in Supabase:', err)
+      console.warn('Error updating application status:', err)
     }
   }
 
@@ -2332,6 +2402,7 @@ function ContractorDashboard({ user, onAddJob, workersList: propWorkersList, lan
 
         {contractorTab === 'postJob' ? (
           <PostJobScreen
+            currentUser={user}
             language={language}
             onCancel={() => setContractorTab('applications')}
             onSaveJob={handlePostJob}
@@ -2687,37 +2758,45 @@ function EmployerDashboard({ user, onAddJob, workersList: propWorkersList, langu
   const [toastMsg, setToastMsg] = useState('')
   const [selectedWorkerForBooking, setSelectedWorkerForBooking] = useState(null)
   const workersList = propWorkersList || []
+  const [applications, setApplications] = useState([])
 
-  const [employerApps] = useState([
-    {
-      id: 'emp-app-1',
-      workerName: 'Raju Kumar',
-      trade: 'Senior Masonry Work',
-      tradeHi: 'वरिष्ठ राजमिस्त्री',
-      project: 'Skyline Homes',
-      phone: '+91 98765 43210',
-      experience: '5 Years',
-      experienceHi: '5 वर्ष',
-      location: 'Andheri West, Mumbai',
-      wage: 850,
-      paymentStatus: 'paid',
-      status: 'accepted'
-    },
-    {
-      id: 'emp-app-2',
-      workerName: 'Deepak Sawant',
-      trade: 'Site Wiring Electrician',
-      tradeHi: 'साइट वायरिंग इलेक्ट्रीशियन',
-      project: 'Skyline Homes',
-      phone: '+91 98223 99881',
-      experience: '6 Years',
-      experienceHi: '6 वर्ष',
-      location: 'Kurla West, Mumbai',
-      wage: 900,
-      paymentStatus: 'paid',
-      status: 'accepted'
+  useEffect(() => {
+    let active = true
+    async function loadEmployerApps() {
+      try {
+        const res = await fetchContractorApplications(user?.id, user?.name)
+        if (active && res.success && res.data) {
+          setApplications(res.data)
+        }
+      } catch (err) {
+        console.warn('Error loading employer applications:', err)
+      }
     }
-  ])
+    loadEmployerApps()
+
+    let bc
+    try {
+      bc = new BroadcastChannel('kaamsetu_applications_channel')
+      bc.onmessage = () => {
+        loadEmployerApps()
+      }
+    } catch {
+      // ignore
+    }
+
+    const handleStorage = (e) => {
+      if (e.key === 'kaamsetu_applications') {
+        loadEmployerApps()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    return () => {
+      active = false
+      if (bc) bc.close()
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [user?.id, user?.name, employerTab])
 
   const handleBookingConfirmed = (payload) => {
     setSelectedWorkerForBooking(null)
@@ -2733,8 +2812,38 @@ function EmployerDashboard({ user, onAddJob, workersList: propWorkersList, langu
         location: selectedWorkerForBooking.location || 'Mumbai'
       })
     }
-    setToastMsg(t('bookingSuccessToast', language))
-    setTimeout(() => setToastMsg(''), 4500)
+    const employerEmail = (payload?.customerEmail || user?.email || getSavedTestEmail() || 'naikgaonkarvineet@gmail.com').trim()
+    setToastMsg(isEn ? `Worker booked! Confirmation email sent to ${employerEmail}` : `कारीगर बुक किया गया! ${employerEmail} पर पुष्टि ईमेल भेजा गया`)
+    setTimeout(() => setToastMsg(''), 5000)
+  }
+
+  const handleUpdateApplicationStatus = async (appId, status) => {
+    setApplications(prev => prev.map(app => String(app.id) === String(appId) ? { ...app, status, paymentStatus: 'paid', wage: app.wage || 850 } : app))
+    const isAccepted = status === 'accepted'
+
+    if (isAccepted) {
+      const targetApp = applications.find(a => String(a.id) === String(appId))
+      const recipientEmail = (user?.email || targetApp?.employerEmail || getSavedTestEmail() || 'naikgaonkarvineet@gmail.com').trim()
+      setToastMsg(`${t('workerAcceptedWebhookToast', language)} (${recipientEmail})`)
+      setTimeout(() => setToastMsg(''), 5000)
+
+      notifyWorkerAccepted({
+        customerName: user?.name || 'Employer',
+        customerEmail: recipientEmail,
+        workerName: targetApp?.workerName || 'Worker',
+        service: targetApp?.trade || targetApp?.jobTitleEn || 'Work Application',
+        scheduledFor: '2026-09-20 10:00'
+      }).catch(err => console.warn('Worker accepted webhook error:', err))
+    } else {
+      setToastMsg(t('applicantRejectedToast', language))
+      setTimeout(() => setToastMsg(''), 4500)
+    }
+
+    try {
+      await updateApplicationStatus(appId, status)
+    } catch (err) {
+      console.warn('Error updating application status:', err)
+    }
   }
 
   const filteredWorkers = workersList.filter(w => {
@@ -2767,6 +2876,7 @@ function EmployerDashboard({ user, onAddJob, workersList: propWorkersList, langu
 
         {employerTab === 'postJob' ? (
           <PostJobScreen
+            currentUser={user}
             language={language}
             onCancel={() => setEmployerTab('workers')}
             onSaveJob={handlePostJob}
@@ -2863,35 +2973,68 @@ function EmployerDashboard({ user, onAddJob, workersList: propWorkersList, langu
               <div className="applications-view">
                 <div className="section-headline">
                   <h2>{t('applicationsReceivedTitle', language)}</h2>
-                  <span className="count-badge">{employerApps.length}</span>
+                  <span className="count-badge">{applications.length}</span>
                 </div>
 
-                {employerApps.map(app => (
-                  <article key={app.id} className="applicant-card" style={{ marginBottom: '14px' }}>
-                    <div className="applicant-head">
-                      <div className="applicant-info">
-                        <h3>{app.workerName}</h3>
-                        <p>{isEn ? app.trade : app.tradeHi} · {app.project}</p>
+                {applications.length === 0 ? (
+                  <p style={{ textAlign: 'center', padding: '30px', color: 'var(--muted)' }}>
+                    {t('noApplications', language)}
+                  </p>
+                ) : (
+                  applications.map(app => (
+                    <article key={app.id} className="applicant-card" style={{ marginBottom: '14px' }}>
+                      <div className="applicant-head">
+                        <div className="applicant-info">
+                          <h3>{app.workerName}</h3>
+                          <p>{isEn ? (app.jobTitleEn || app.trade) : (app.jobTitleHi || app.tradeHi)} · {app.employer || 'Your Job'}</p>
+                        </div>
+                        {app.status === 'accepted' ? (
+                          <span className="status-badge-applied">✓ {t('statusAccepted', language)}</span>
+                        ) : app.status === 'rejected' ? (
+                          <span style={{ fontSize: '11px', color: 'var(--red)', fontWeight: '700' }}>Declined</span>
+                        ) : (
+                          <span className="wage-pill fair">{t('waitingResponse', language)}</span>
+                        )}
                       </div>
-                      <span className="status-badge-applied">✓ {t('statusAccepted', language)}</span>
-                    </div>
-                    <div className="applicant-meta-grid">
-                      <div>
-                        <span>{t('experienceLabel', language)}</span>
-                        <strong>{isEn ? app.experience : app.experienceHi}</strong>
+
+                      <div className="applicant-meta-grid">
+                        <div>
+                          <span>{t('experienceLabel', language)}</span>
+                          <strong>{isEn ? app.experience : app.experienceHi}</strong>
+                        </div>
+                        <div>
+                          <span>{t('locationLabel', language)}</span>
+                          <strong>{isEn ? app.location : (app.locationHi || app.location)}</strong>
+                        </div>
                       </div>
-                      <div>
-                        <span>{t('locationLabel', language)}</span>
-                        <strong>{app.location}</strong>
+
+                      <div className="applicant-actions">
+                        {app.status === 'accepted' ? (
+                          <a className="btn-call" href={`tel:${app.phone}`} style={{ width: '100%', justifyContent: 'center' }}>
+                            <Phone size={14} />
+                            <span>{isEn ? `Call ${app.workerName} (${app.phone})` : `${app.workerName} को कॉल करें (${app.phone})`}</span>
+                          </a>
+                        ) : (
+                          <>
+                            <button
+                              className="btn-accept"
+                              onClick={() => handleUpdateApplicationStatus(app.id, 'accepted')}
+                            >
+                              <Check size={14} />
+                              <span>{t('acceptApplicant', language)}</span>
+                            </button>
+                            <button
+                              className="btn-decline"
+                              onClick={() => handleUpdateApplicationStatus(app.id, 'rejected')}
+                            >
+                              {t('rejectApplicant', language)}
+                            </button>
+                          </>
+                        )}
                       </div>
-                    </div>
-                    <div className="applicant-actions">
-                      <a className="btn-call" href={`tel:${app.phone}`} style={{ width: '100%', justifyContent: 'center' }}>
-                        <Phone size={14} /> {isEn ? `Call ${app.workerName} (${app.phone})` : `${app.workerName} को कॉल करें (${app.phone})`}
-                      </a>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  ))
+                )}
               </div>
             )}
 
@@ -3231,7 +3374,7 @@ export default function App() {
   const handleApplyJob = async (job) => {
     setJobs(jobs.map(j => j.id === job.id ? { ...j, status: 'applied' } : j))
     try {
-      await submitApplication(job.id, currentUser?.id, currentUser)
+      await submitApplication(job.id, currentUser?.id, currentUser, job)
     } catch (err) {
       console.warn('Error submitting application to Supabase:', err)
     }
