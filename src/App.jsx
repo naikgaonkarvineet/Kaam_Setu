@@ -2033,7 +2033,7 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
       workingHoursHi: hours,
       peopleNeeded: requirements.reduce((sum, r) => sum + Number(r.count || 0), 0),
       requirements,
-      status: 'active',
+      status: 'open',
       urgent,
     }
 

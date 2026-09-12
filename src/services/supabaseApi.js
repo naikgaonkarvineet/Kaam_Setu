@@ -57,7 +57,7 @@ export function mapJobRecord(dbJob) {
 
   const cleanSkills = skillsList.filter(s => !s.startsWith('meta:'))
 
-  const wageVal = Number(dbJob.wage || dbJob.salary || dbJob.daily_wage || 800)
+  const wageVal = Number(dbJob.wage_offered || dbJob.wage || dbJob.salary || dbJob.daily_wage || 800)
   const peopleNeeded = Number(dbJob.num_laborers_required || dbJob.count || dbJob.peopleNeeded || 1)
   const employerName = metaEmployer || dbJob.employer || dbJob.contactPerson || dbJob.users?.name || 'Site Employer'
   const contactName = metaContact || dbJob.contactPerson || employerName || 'Site Supervisor'
@@ -88,7 +88,7 @@ export function mapJobRecord(dbJob) {
       : (Array.isArray(dbJob.requirements) && dbJob.requirements.length > 0
           ? dbJob.requirements
           : [{ trade: tradeInfo.en, count: peopleNeeded }]),
-    status: dbJob.status || 'active',
+    status: dbJob.status || 'open',
     urgent: Boolean(dbJob.is_urgent || dbJob.urgent)
   }
 }
@@ -427,40 +427,46 @@ export async function createJob(jobData) {
     ]
 
     try {
-      // Try full schema first
+      const wageNumber = Number(jobData.wage || 800)
+      const tradeString = (jobData.tradeId || jobData.job_type || 'masonry').toLowerCase()
+
+      // Full payload with all required columns and valid status: 'open'
       const fullPayload = {
         contractor_id: isUUID(jobData.contractorId) ? jobData.contractorId : null,
-        job_type: (jobData.tradeId || jobData.job_type || 'masonry').toLowerCase(),
+        job_type: tradeString,
+        skill: tradeString,
         location: jobData.place || jobData.location || 'Mumbai',
-        wage: Number(jobData.wage || 800),
+        wage: wageNumber,
+        wage_offered: wageNumber,
         working_hours: jobData.workingHours || '8:30 AM – 5:30 PM (8 hrs)',
         num_laborers_required: Number(jobData.peopleNeeded || 1),
         required_skills: metadataSkills,
         is_urgent: Boolean(jobData.urgent || jobData.is_urgent),
-        status: 'active'
+        status: 'open'
       }
 
-      console.log('[Supabase createJob] Attempting full schema insert:', fullPayload)
+      console.log('[Supabase createJob] Inserting payload:', fullPayload)
       const { data, error } = await supabase.from('jobs').insert(fullPayload).select('*').single()
 
       if (!error && data) {
-        console.log('[Supabase createJob] Full schema insert succeeded:', data)
+        console.log('[Supabase createJob] Insert succeeded:', data)
         const mapped = mapJobRecord(data)
         savePostedJob(mapped)
         return { success: true, data: mapped }
       }
 
-      // If full schema failed because column doesn't exist (e.g. contractor_id, wage), try minimal schema with packed JSON
-      if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
-        console.log('[Supabase createJob] Trying minimal schema insert (skill with packed JSON)...')
+      // If full schema failed because column doesn't exist, try minimal payload satisfying NOT NULL constraints
+      if (error) {
+        console.log('[Supabase createJob] Retrying with required columns (skill, wage_offered, location, status)...')
         const minimalPayload = {
-          skill: JSON.stringify(normalizedJob),
+          skill: tradeString,
+          wage_offered: wageNumber,
           location: jobData.place || jobData.location || 'Mumbai',
-          status: 'active'
+          status: 'open'
         }
         const retry = await supabase.from('jobs').insert(minimalPayload).select('*').single()
         if (!retry.error && retry.data) {
-          console.log('[Supabase createJob] Minimal schema insert succeeded:', retry.data)
+          console.log('[Supabase createJob] Minimal insert succeeded:', retry.data)
           const mapped = mapJobRecord(retry.data)
           savePostedJob(mapped)
           return { success: true, data: mapped }
