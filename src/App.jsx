@@ -349,7 +349,7 @@ function KaamSetuChatbot() {
   return (
     <elevenlabs-convai
       key={widgetKey}
-      agent-id="agent_6701m2a8bwsfebfr61ktm0avd9cg"
+      agent-id="agent_6001m2bq0738fwwspqdxhpwv9880"
       variant="compact"
       expandable="always"
       expand-text="AI साथी / Talk to AI"
