@@ -1366,7 +1366,7 @@ function JobDetailsModal({ job, isOpen, onClose, onApply, language }) {
 
 // 5. WORKER DASHBOARD ("I need Work")
 // Navigation: "Find Work" (Jobs), "Active Sites" (Ongoing sites + URGENT tags), "My Jobs", "Profile"
-function WorkerDashboard({ user, jobs, sites, onApplyJob, language, setLanguage, onHome, onSignOut }) {
+function WorkerDashboard({ user, jobs, sites, onApplyJob, onRefreshJobs, language, setLanguage, onHome, onSignOut }) {
   const isEn = language === 'en'
   const [activeTab, setActiveTab] = useState('jobs') // 'jobs' | 'activeSites' | 'myJobs' | 'account'
   const [selectedTrade, setSelectedTrade] = useState('all')
@@ -1374,6 +1374,13 @@ function WorkerDashboard({ user, jobs, sites, onApplyJob, language, setLanguage,
   const [reviewsOpen, setReviewsOpen] = useState(false)
   const [selectedJob, setSelectedJob] = useState(null)
   const [urgentSitesOnly, setUrgentSitesOnly] = useState(false)
+
+  // Re-fetch jobs whenever worker dashboard loads or activeTab switches to jobs
+  useEffect(() => {
+    if (onRefreshJobs) {
+      onRefreshJobs()
+    }
+  }, [activeTab, onRefreshJobs])
 
   // Work Requests / Bookings State
   const [bookings, setBookings] = useState(() => getBookings())
@@ -1447,9 +1454,17 @@ function WorkerDashboard({ user, jobs, sites, onApplyJob, language, setLanguage,
     setTimeout(() => setToastMsg(''), 3000)
   }
 
-  // Filtered jobs
+  // Filtered jobs with robust case-insensitivity and status check
   const filteredJobs = jobs.filter(job => {
-    return selectedTrade === 'all' || job.tradeId === selectedTrade
+    const isActive = !job.status || job.status === 'active' || job.status === 'open'
+    if (!isActive) return false
+
+    if (selectedTrade === 'all') return true
+
+    const filterKey = String(selectedTrade).trim().toLowerCase()
+    const jobTrade = String(job.tradeId || job.tradeEn || job.trade || '').trim().toLowerCase()
+
+    return jobTrade === filterKey || jobTrade.includes(filterKey) || filterKey.includes(jobTrade)
   })
 
   // Filtered Active Sites for Worker
@@ -2001,13 +2016,13 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
       id: getNextId(),
       titleEn: `${trade.charAt(0).toUpperCase() + trade.slice(1)} Required`,
       titleHi: `${t(trade, 'hi')} काम हेतु कारीगर`,
-      tradeId: trade,
-      tradeEn: trade,
+      tradeId: trade.toLowerCase(),
+      tradeEn: trade.charAt(0).toUpperCase() + trade.slice(1),
       tradeHi: t(trade, 'hi'),
-      employer: contactName,
-      contactPerson: contactName,
-      contactPhone,
-      place: location,
+      employer: contactName || 'Site Employer',
+      contactPerson: contactName || 'Site Supervisor',
+      contactPhone: contactPhone || '+91 98201 54321',
+      place: location || 'Mumbai',
       wage: Number(wage) || 800,
       referenceWage: 780,
       tone: wage < 700 ? 'low' : wage > 880 ? 'high' : 'fair',
@@ -2018,7 +2033,7 @@ function PostJobScreen({ onCancel, onSaveJob, language }) {
       workingHoursHi: hours,
       peopleNeeded: requirements.reduce((sum, r) => sum + Number(r.count || 0), 0),
       requirements,
-      status: 'open',
+      status: 'active',
       urgent,
     }
 
@@ -3058,44 +3073,108 @@ export default function App() {
     }
   }, [currentUser, role, language])
 
+  const loadJobs = async () => {
+    try {
+      const res = await fetchActiveJobs()
+      if (res.success && res.data && res.data.length > 0) {
+        setJobs(res.data)
+        const activeSites = res.data.map(j => ({
+          id: j.id,
+          siteNameEn: j.titleEn,
+          siteNameHi: j.titleHi,
+          location: j.place,
+          totalNeeded: j.peopleNeeded,
+          filledCount: 0,
+          dailyWage: j.wage,
+          urgent: j.urgent,
+          supervisor: j.contactPerson,
+          supervisorPhone: j.contactPhone,
+          trades: [j.tradeEn || 'Masonry'],
+          hours: j.workingHours
+        }))
+        setSites(activeSites)
+      }
+    } catch (err) {
+      console.warn('Error loading active jobs:', err)
+    }
+  }
+
   useEffect(() => {
-    async function loadInitialData() {
+    let active = true
+    async function syncJobs() {
       try {
         const res = await fetchActiveJobs()
-        if (res.success && res.data && res.data.length > 0) {
-          const localPosted = getPostedJobs()
-          const merged = [...localPosted, ...res.data.filter(rj => !localPosted.some(lp => lp.id === rj.id))]
-          setJobs(merged)
-          const activeSites = merged.map(j => ({
-            id: j.id,
-            siteNameEn: j.titleEn,
-            siteNameHi: j.titleHi,
-            location: j.place,
-            totalNeeded: j.peopleNeeded,
-            filledCount: 0,
-            dailyWage: j.wage,
-            urgent: j.urgent,
-            supervisor: j.contactPerson,
-            supervisorPhone: j.contactPhone,
-            trades: [j.tradeEn || 'Masonry'],
-            hours: j.workingHours
-          }))
-          setSites(activeSites)
+        if (active && res.success && res.data && res.data.length > 0) {
+          setJobs(res.data)
         }
       } catch (err) {
-        console.warn('Error loading active jobs from Supabase:', err)
-      }
-
-      try {
-        const workersRes = await fetchWorkersDirectory()
-        if (workersRes.success && workersRes.data && workersRes.data.length > 0) {
-          setWorkersList(workersRes.data)
-        }
-      } catch (err) {
-        console.warn('Error loading workers directory:', err)
+        console.warn('Initial jobs sync error:', err)
       }
     }
-    loadInitialData()
+    syncJobs()
+
+    // 1. Supabase Realtime Subscription for instant live multi-user sync
+    let channel = null
+    if (isSupabaseConfigured() && supabase) {
+      channel = supabase
+        .channel('kaamsetu_realtime_jobs')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'jobs' },
+          async (payload) => {
+            console.log('[Supabase Realtime] Job table mutation detected:', payload)
+            await loadJobs()
+          }
+        )
+        .subscribe()
+    }
+
+    // 2. Cross-tab & multi-window instant synchronization
+    let bc
+    try {
+      bc = new BroadcastChannel('kaamsetu_jobs_channel')
+      bc.onmessage = async (event) => {
+        if (event.data?.type === 'JOB_POSTED' && event.data.job) {
+          const freshJob = event.data.job
+          setJobs(prev => [freshJob, ...prev.filter(j => j.id !== freshJob.id)])
+        } else {
+          await loadJobs()
+        }
+      }
+    } catch {
+      // BroadcastChannel fallback
+    }
+
+    const handleStorage = (e) => {
+      if (e.key === 'kaamsetu_posted_jobs') {
+        loadJobs()
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    // 3. Refetch when window regains focus or becomes visible
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') {
+        loadJobs()
+      }
+    }
+    window.addEventListener('focus', handleFocusOrVisible)
+    document.addEventListener('visibilitychange', handleFocusOrVisible)
+
+    // Also load workers directory
+    fetchWorkersDirectory().then(workersRes => {
+      if (workersRes.success && workersRes.data && workersRes.data.length > 0) {
+        setWorkersList(workersRes.data)
+      }
+    }).catch(err => console.warn('Error loading workers directory:', err))
+
+    return () => {
+      if (channel && supabase) supabase.removeChannel(channel)
+      bc?.close()
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', handleFocusOrVisible)
+      document.removeEventListener('visibilitychange', handleFocusOrVisible)
+    }
   }, [])
 
   const handleChooseRole = (selectedRole) => {
@@ -3153,8 +3232,22 @@ export default function App() {
   }
 
   const handleAddJob = async (newJob) => {
-    savePostedJob(newJob)
+    // 1. Immediately update local state
     setJobs(prev => [newJob, ...prev.filter(j => j.id !== newJob.id)])
+
+    // 2. Persist locally for instant resilience
+    savePostedJob(newJob)
+
+    // 3. Broadcast across tabs and windows
+    try {
+      const bc = new BroadcastChannel('kaamsetu_jobs_channel')
+      bc.postMessage({ type: 'JOB_POSTED', job: newJob })
+      bc.close()
+    } catch {
+      // fallback
+    }
+
+    // 4. Update sites
     const newSite = {
       id: newJob.id || getNextId(),
       siteNameEn: newJob.titleEn,
@@ -3171,8 +3264,12 @@ export default function App() {
     }
     setSites(prev => [newSite, ...prev])
 
+    // 5. Insert into Supabase live database
     try {
-      await createJob({ ...newJob, contractorId: currentUser?.id })
+      const created = await createJob({ ...newJob, contractorId: currentUser?.id })
+      if (created?.success && created.data) {
+        setJobs(prev => [created.data, ...prev.filter(j => j.id !== newJob.id && j.id !== created.data.id)])
+      }
     } catch (err) {
       console.warn('Error creating job in Supabase:', err)
     }
@@ -3233,6 +3330,7 @@ export default function App() {
         jobs={jobs}
         sites={sites}
         onApplyJob={handleApplyJob}
+        onRefreshJobs={loadJobs}
         language={language}
         setLanguage={setLanguage}
         onHome={() => {}}

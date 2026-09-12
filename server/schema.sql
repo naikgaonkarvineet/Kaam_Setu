@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- KAAMSETU COMPLETE DATABASE SCHEMA & ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 
@@ -135,7 +135,7 @@ create policy "Any authenticated user can read active jobs"
 
 create policy "Contractors can create jobs"
   on public.jobs for insert
-  with check (auth.uid() = contractor_id or auth.uid() is null);
+  with check (auth.uid() = contractor_id or auth.uid() is null or contractor_id is null);
 
 create policy "Only contractor who created job can update"
   on public.jobs for update

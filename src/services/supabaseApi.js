@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../supabaseClient'
-import { findUserByPhone, saveUser, getRegisteredWorkers, getPostedJobs } from '../data/userStore'
+import { findUserByPhone, saveUser, getRegisteredWorkers, getPostedJobs, savePostedJob } from '../data/userStore'
 import {
   INITIAL_JOBS,
   AVAILABLE_WORKERS,
@@ -29,27 +29,39 @@ export function mapJobRecord(dbJob) {
   const tradeKey = (dbJob.job_type || 'helper').toLowerCase()
   const tradeInfo = tradeMap[tradeKey] || { en: dbJob.job_type || 'General Labor', hi: 'कारीगर' }
 
+  // Extract any encoded metadata from required_skills
+  const skillsList = Array.isArray(dbJob.required_skills) ? dbJob.required_skills : []
+  const metaEmployer = skillsList.find(s => s.startsWith('meta:employer='))?.replace('meta:employer=', '')
+  const metaContact = skillsList.find(s => s.startsWith('meta:contact='))?.replace('meta:contact=', '')
+  const metaPhone = skillsList.find(s => s.startsWith('meta:phone='))?.replace('meta:phone=', '')
+  const metaTitleEn = skillsList.find(s => s.startsWith('meta:titleEn='))?.replace('meta:titleEn=', '')
+  const metaTitleHi = skillsList.find(s => s.startsWith('meta:titleHi='))?.replace('meta:titleHi=', '')
+  const metaStartDate = skillsList.find(s => s.startsWith('meta:startDate='))?.replace('meta:startDate=', '')
+
+  const cleanSkills = skillsList.filter(s => !s.startsWith('meta:'))
+
   return {
     id: dbJob.id,
-    titleEn: `${tradeInfo.en} Required`,
-    titleHi: `${tradeInfo.hi} चाहिए`,
+    titleEn: metaTitleEn || `${tradeInfo.en} Required`,
+    titleHi: metaTitleHi || `${tradeInfo.hi} चाहिए`,
     tradeId: tradeKey,
     tradeEn: tradeInfo.en,
     tradeHi: tradeInfo.hi,
-    employer: dbJob.users?.name || 'Shiv Builders & Infra',
-    contactPerson: dbJob.users?.name || 'Site Supervisor',
-    contactPhone: dbJob.users?.phone_number ? `+91 ${dbJob.users.phone_number}` : '+91 98201 54321',
+    employer: metaEmployer || dbJob.users?.name || 'Shiv Builders & Infra',
+    contactPerson: metaContact || dbJob.users?.name || 'Site Supervisor',
+    contactPhone: metaPhone || (dbJob.users?.phone_number ? `+91 ${dbJob.users.phone_number}` : '+91 98201 54321'),
     place: dbJob.location || 'Mumbai',
     wage: Number(dbJob.wage || 800),
-    referenceWage: Number(dbJob.wage || 800) - 40,
-    tone: 'fair',
-    time: 'Today',
-    timeHi: 'आज से',
+    referenceWage: Math.max(500, Number(dbJob.wage || 800) - 40),
+    tone: Number(dbJob.wage || 800) < 700 ? 'low' : Number(dbJob.wage || 800) > 880 ? 'high' : 'fair',
+    time: metaStartDate ? `From ${metaStartDate}` : 'Today',
+    timeHi: metaStartDate ? `${metaStartDate} से` : 'आज से',
+    startDate: metaStartDate || new Date().toISOString().slice(0, 10),
     workingHours: dbJob.working_hours || '8:30 AM – 5:30 PM (8 hrs)',
-    workingHoursHi: 'सुबह 8:30 – शाम 5:30 (8 घंटे)',
+    workingHoursHi: dbJob.working_hours || 'सुबह 8:30 – शाम 5:30 (8 घंटे)',
     peopleNeeded: Number(dbJob.num_laborers_required || 1),
-    requirements: (dbJob.required_skills && dbJob.required_skills.length > 0)
-      ? dbJob.required_skills.map(s => ({ trade: s, count: 1 }))
+    requirements: cleanSkills.length > 0
+      ? cleanSkills.map(s => ({ trade: s, count: 1 }))
       : [{ trade: tradeInfo.en, count: Number(dbJob.num_laborers_required || 1) }],
     status: dbJob.status || 'active',
     urgent: Boolean(dbJob.is_urgent)
@@ -334,13 +346,14 @@ export async function fetchActiveJobs() {
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
-        .eq('status', 'active')
+        .or('status.eq.active,status.eq.open')
         .order('created_at', { ascending: false })
 
       if (error) throw error
       if (data && data.length > 0) {
         const remoteJobs = data.map(mapJobRecord)
-        const combined = [...localPosted, ...remoteJobs.filter(rj => !localPosted.some(lp => lp.id === rj.id))]
+        // Live database jobs come first, merged with any local unpushed jobs
+        const combined = [...remoteJobs, ...localPosted.filter(lp => !remoteJobs.some(rj => String(rj.id) === String(lp.id)))]
         return { success: true, data: combined }
       }
     } catch (err) {
@@ -348,24 +361,42 @@ export async function fetchActiveJobs() {
     }
   }
 
-  const combined = [...localPosted, ...INITIAL_JOBS.filter(ij => !localPosted.some(lp => lp.id === ij.id))]
+  // Primary data source: newly posted jobs + fallback seeds
+  const combined = localPosted.length > 0
+    ? [...localPosted, ...INITIAL_JOBS.filter(ij => !localPosted.some(lp => String(lp.id) === String(ij.id)))]
+    : INITIAL_JOBS
+
   return { success: true, data: combined }
 }
 
 export async function createJob(jobData) {
+  const metadataSkills = [
+    ...(Array.isArray(jobData.requirements) ? jobData.requirements.map(r => r.trade) : [jobData.tradeEn || 'General Labor']),
+    `meta:employer=${jobData.employer || jobData.contactPerson || 'Site Employer'}`,
+    `meta:contact=${jobData.contactPerson || 'Site Supervisor'}`,
+    `meta:phone=${jobData.contactPhone || '+91 98201 54321'}`,
+    `meta:titleEn=${jobData.titleEn || ''}`,
+    `meta:titleHi=${jobData.titleHi || ''}`,
+    `meta:startDate=${jobData.startDate || ''}`
+  ]
+
+  const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
   if (isSupabaseConfigured() && supabase) {
     try {
       const payload = {
-        contractor_id: jobData.contractorId || null,
-        job_type: jobData.tradeId || jobData.job_type || 'masonry',
+        contractor_id: isUUID(jobData.contractorId) ? jobData.contractorId : null,
+        job_type: (jobData.tradeId || jobData.job_type || 'masonry').toLowerCase(),
         location: jobData.place || jobData.location || 'Mumbai',
         wage: Number(jobData.wage || 800),
         working_hours: jobData.workingHours || '8:30 AM – 5:30 PM (8 hrs)',
         num_laborers_required: Number(jobData.peopleNeeded || jobData.num_laborers_required || 1),
-        required_skills: jobData.required_skills || [jobData.tradeEn || 'General Labor'],
+        required_skills: metadataSkills,
         is_urgent: Boolean(jobData.urgent || jobData.is_urgent),
         status: 'active'
       }
+
+      console.log('[Supabase createJob] Inserting payload:', payload)
 
       const { data, error } = await supabase
         .from('jobs')
@@ -373,18 +404,26 @@ export async function createJob(jobData) {
         .select('*')
         .single()
 
-      if (error) throw error
-      return { success: true, data: mapJobRecord(data) }
+      if (error) {
+        console.error('[Supabase createJob] Insert error:', error)
+        throw error
+      }
+
+      console.log('[Supabase createJob] Insert successful:', data)
+      const mapped = mapJobRecord(data)
+      savePostedJob(mapped)
+      return { success: true, data: mapped }
     } catch (err) {
       console.warn('Supabase createJob failed, creating locally:', err.message)
     }
   }
 
   const localJob = {
-    id: Date.now(),
+    id: jobData.id || Date.now(),
     ...jobData,
     status: 'active'
   }
+  savePostedJob(localJob)
   return { success: true, data: localJob }
 }
 
