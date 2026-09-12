@@ -247,12 +247,6 @@ sequenceDiagram
 
 ---
 
-## 📄 License
-
-Distributed under the **MIT License**. See `LICENSE` for more information.
-
----
-
 ## 👥 Authors & Acknowledgments
 
 - Built with ❤️ for India's hardworking artisans and daily-wage workforce.
