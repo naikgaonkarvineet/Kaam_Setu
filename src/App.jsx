@@ -480,12 +480,6 @@ function LandingScreen({ language, setLanguage, onChooseRole }) {
         </button>
       </div>
 
-      {/* Trust & Social Proof Strip */}
-      <div className="landing-trust-ribbon splash-fade-in">
-        <ShieldCheck size={14} color="var(--green)" />
-        <span>{isEn ? '12,000+ Verified Workers & Contractors across India' : '12,000+ से अधिक सत्यापित कारीगर व ठेकेदार'}</span>
-      </div>
-
       <footer className="app-footer splash-footer">
         <span>{t('footerText', language)}</span>
       </footer>
