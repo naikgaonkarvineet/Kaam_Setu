@@ -16,6 +16,22 @@ export function cleanPhone(raw) {
 
 // Map database job record to UI format
 export function mapJobRecord(dbJob) {
+  if (!dbJob) return null
+
+  // If the record stored full JSON in skill
+  if (typeof dbJob.skill === 'string' && dbJob.skill.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(dbJob.skill)
+      return {
+        ...parsed,
+        id: dbJob.id || parsed.id,
+        status: dbJob.status || parsed.status || 'active'
+      }
+    } catch {
+      // fallback to regular mapping
+    }
+  }
+
   const tradeMap = {
     masonry: { en: 'Masonry', hi: 'राजमिस्त्री' },
     painting: { en: 'Painting', hi: 'पेंटर' },
@@ -26,8 +42,9 @@ export function mapJobRecord(dbJob) {
     helper: { en: 'General Labor', hi: 'सहायक / लेबर' }
   }
 
-  const tradeKey = (dbJob.job_type || 'helper').toLowerCase()
-  const tradeInfo = tradeMap[tradeKey] || { en: dbJob.job_type || 'General Labor', hi: 'कारीगर' }
+  const rawTrade = dbJob.job_type || dbJob.tradeId || dbJob.skill || dbJob.tradeEn || dbJob.trade || 'helper'
+  const tradeKey = String(rawTrade).toLowerCase().replace(/\s+/g, '')
+  const tradeInfo = tradeMap[tradeKey] || { en: dbJob.tradeEn || rawTrade, hi: dbJob.tradeHi || 'कारीगर' }
 
   // Extract any encoded metadata from required_skills
   const skillsList = Array.isArray(dbJob.required_skills) ? dbJob.required_skills : []
@@ -40,31 +57,39 @@ export function mapJobRecord(dbJob) {
 
   const cleanSkills = skillsList.filter(s => !s.startsWith('meta:'))
 
+  const wageVal = Number(dbJob.wage || dbJob.salary || dbJob.daily_wage || 800)
+  const peopleNeeded = Number(dbJob.num_laborers_required || dbJob.count || dbJob.peopleNeeded || 1)
+  const employerName = metaEmployer || dbJob.employer || dbJob.contactPerson || dbJob.users?.name || 'Site Employer'
+  const contactName = metaContact || dbJob.contactPerson || employerName || 'Site Supervisor'
+  const phoneVal = metaPhone || dbJob.contactPhone || (dbJob.users?.phone_number ? `+91 ${dbJob.users.phone_number}` : '+91 98201 54321')
+
   return {
     id: dbJob.id,
-    titleEn: metaTitleEn || `${tradeInfo.en} Required`,
-    titleHi: metaTitleHi || `${tradeInfo.hi} चाहिए`,
+    titleEn: metaTitleEn || dbJob.titleEn || `${tradeInfo.en} Required`,
+    titleHi: metaTitleHi || dbJob.titleHi || `${tradeInfo.hi} चाहिए`,
     tradeId: tradeKey,
     tradeEn: tradeInfo.en,
     tradeHi: tradeInfo.hi,
-    employer: metaEmployer || dbJob.users?.name || 'Shiv Builders & Infra',
-    contactPerson: metaContact || dbJob.users?.name || 'Site Supervisor',
-    contactPhone: metaPhone || (dbJob.users?.phone_number ? `+91 ${dbJob.users.phone_number}` : '+91 98201 54321'),
-    place: dbJob.location || 'Mumbai',
-    wage: Number(dbJob.wage || 800),
-    referenceWage: Math.max(500, Number(dbJob.wage || 800) - 40),
-    tone: Number(dbJob.wage || 800) < 700 ? 'low' : Number(dbJob.wage || 800) > 880 ? 'high' : 'fair',
-    time: metaStartDate ? `From ${metaStartDate}` : 'Today',
-    timeHi: metaStartDate ? `${metaStartDate} से` : 'आज से',
-    startDate: metaStartDate || new Date().toISOString().slice(0, 10),
-    workingHours: dbJob.working_hours || '8:30 AM – 5:30 PM (8 hrs)',
-    workingHoursHi: dbJob.working_hours || 'सुबह 8:30 – शाम 5:30 (8 घंटे)',
-    peopleNeeded: Number(dbJob.num_laborers_required || 1),
+    employer: employerName,
+    contactPerson: contactName,
+    contactPhone: phoneVal,
+    place: dbJob.location || dbJob.place || 'Mumbai',
+    wage: wageVal,
+    referenceWage: Math.max(500, wageVal - 40),
+    tone: wageVal < 700 ? 'low' : wageVal > 880 ? 'high' : 'fair',
+    time: metaStartDate || dbJob.time || 'Today',
+    timeHi: metaStartDate || dbJob.timeHi || 'आज से',
+    startDate: metaStartDate || dbJob.startDate || new Date().toISOString().slice(0, 10),
+    workingHours: dbJob.working_hours || dbJob.workingHours || '8:30 AM – 5:30 PM (8 hrs)',
+    workingHoursHi: dbJob.working_hours || dbJob.workingHoursHi || 'सुबह 8:30 – शाम 5:30 (8 घंटे)',
+    peopleNeeded,
     requirements: cleanSkills.length > 0
       ? cleanSkills.map(s => ({ trade: s, count: 1 }))
-      : [{ trade: tradeInfo.en, count: Number(dbJob.num_laborers_required || 1) }],
+      : (Array.isArray(dbJob.requirements) && dbJob.requirements.length > 0
+          ? dbJob.requirements
+          : [{ trade: tradeInfo.en, count: peopleNeeded }]),
     status: dbJob.status || 'active',
-    urgent: Boolean(dbJob.is_urgent)
+    urgent: Boolean(dbJob.is_urgent || dbJob.urgent)
   }
 }
 
@@ -340,7 +365,9 @@ export async function saveUserProfile(userData) {
 
 export async function fetchActiveJobs() {
   const localPosted = getPostedJobs()
+  let remoteJobs = []
 
+  // 1. Fetch from Supabase Cloud Database
   if (isSupabaseConfigured() && supabase) {
     try {
       const { data, error } = await supabase
@@ -349,82 +376,102 @@ export async function fetchActiveJobs() {
         .or('status.eq.active,status.eq.open')
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      if (data && data.length > 0) {
-        const remoteJobs = data.map(mapJobRecord)
-        // Live database jobs come first, merged with any local unpushed jobs
-        const combined = [...remoteJobs, ...localPosted.filter(lp => !remoteJobs.some(rj => String(rj.id) === String(lp.id)))]
-        return { success: true, data: combined }
+      if (!error && data && data.length > 0) {
+        remoteJobs = data.map(mapJobRecord).filter(Boolean)
       }
     } catch (err) {
-      console.warn('Supabase fetchActiveJobs failed, falling back to local jobs:', err.message)
+      console.warn('[Supabase] fetchActiveJobs notice:', err.message)
     }
   }
 
-  // Primary data source: newly posted jobs + fallback seeds
-  const combined = localPosted.length > 0
-    ? [...localPosted, ...INITIAL_JOBS.filter(ij => !localPosted.some(lp => String(lp.id) === String(ij.id)))]
-    : INITIAL_JOBS
+  // 2. Deduplicate across Supabase live database and local storage
+  const allLiveJobs = [...remoteJobs, ...localPosted]
+  const uniqueLiveJobs = Array.from(
+    new Map(allLiveJobs.map(j => [String(j.id), j])).values()
+  )
 
-  return { success: true, data: combined }
+  // Newly posted jobs from ANY device appear at the top, merged with seed jobs
+  if (uniqueLiveJobs.length > 0) {
+    const combined = [
+      ...uniqueLiveJobs,
+      ...INITIAL_JOBS.filter(ij => !uniqueLiveJobs.some(uj => String(uj.id) === String(ij.id)))
+    ]
+    return { success: true, data: combined }
+  }
+
+  return { success: true, data: INITIAL_JOBS }
 }
 
 export async function createJob(jobData) {
-  const metadataSkills = [
-    ...(Array.isArray(jobData.requirements) ? jobData.requirements.map(r => r.trade) : [jobData.tradeEn || 'General Labor']),
-    `meta:employer=${jobData.employer || jobData.contactPerson || 'Site Employer'}`,
-    `meta:contact=${jobData.contactPerson || 'Site Supervisor'}`,
-    `meta:phone=${jobData.contactPhone || '+91 98201 54321'}`,
-    `meta:titleEn=${jobData.titleEn || ''}`,
-    `meta:titleHi=${jobData.titleHi || ''}`,
-    `meta:startDate=${jobData.startDate || ''}`
-  ]
+  const normalizedJob = {
+    id: jobData.id || `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    ...jobData,
+    status: 'active'
+  }
 
-  const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+  // 1. Always persist to local cache for instant 0ms rendering on this device
+  savePostedJob(normalizedJob)
 
+  // 2. Insert into Supabase Cloud Database (for universal visibility across all devices)
   if (isSupabaseConfigured() && supabase) {
+    const isUUID = (str) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+    const metadataSkills = [
+      ...(Array.isArray(jobData.requirements) ? jobData.requirements.map(r => r.trade) : [jobData.tradeEn || 'General Labor']),
+      `meta:employer=${jobData.employer || jobData.contactPerson || 'Site Employer'}`,
+      `meta:contact=${jobData.contactPerson || 'Site Supervisor'}`,
+      `meta:phone=${jobData.contactPhone || '+91 98201 54321'}`,
+      `meta:titleEn=${jobData.titleEn || ''}`,
+      `meta:titleHi=${jobData.titleHi || ''}`,
+      `meta:startDate=${jobData.startDate || ''}`
+    ]
+
     try {
-      const payload = {
+      // Try full schema first
+      const fullPayload = {
         contractor_id: isUUID(jobData.contractorId) ? jobData.contractorId : null,
         job_type: (jobData.tradeId || jobData.job_type || 'masonry').toLowerCase(),
         location: jobData.place || jobData.location || 'Mumbai',
         wage: Number(jobData.wage || 800),
         working_hours: jobData.workingHours || '8:30 AM – 5:30 PM (8 hrs)',
-        num_laborers_required: Number(jobData.peopleNeeded || jobData.num_laborers_required || 1),
+        num_laborers_required: Number(jobData.peopleNeeded || 1),
         required_skills: metadataSkills,
         is_urgent: Boolean(jobData.urgent || jobData.is_urgent),
         status: 'active'
       }
 
-      console.log('[Supabase createJob] Inserting payload:', payload)
+      console.log('[Supabase createJob] Attempting full schema insert:', fullPayload)
+      const { data, error } = await supabase.from('jobs').insert(fullPayload).select('*').single()
 
-      const { data, error } = await supabase
-        .from('jobs')
-        .insert(payload)
-        .select('*')
-        .single()
-
-      if (error) {
-        console.error('[Supabase createJob] Insert error:', error)
-        throw error
+      if (!error && data) {
+        console.log('[Supabase createJob] Full schema insert succeeded:', data)
+        const mapped = mapJobRecord(data)
+        savePostedJob(mapped)
+        return { success: true, data: mapped }
       }
 
-      console.log('[Supabase createJob] Insert successful:', data)
-      const mapped = mapJobRecord(data)
-      savePostedJob(mapped)
-      return { success: true, data: mapped }
+      // If full schema failed because column doesn't exist (e.g. contractor_id, wage), try minimal schema with packed JSON
+      if (error && (error.message?.includes('column') || error.code === 'PGRST204')) {
+        console.log('[Supabase createJob] Trying minimal schema insert (skill with packed JSON)...')
+        const minimalPayload = {
+          skill: JSON.stringify(normalizedJob),
+          location: jobData.place || jobData.location || 'Mumbai',
+          status: 'active'
+        }
+        const retry = await supabase.from('jobs').insert(minimalPayload).select('*').single()
+        if (!retry.error && retry.data) {
+          console.log('[Supabase createJob] Minimal schema insert succeeded:', retry.data)
+          const mapped = mapJobRecord(retry.data)
+          savePostedJob(mapped)
+          return { success: true, data: mapped }
+        }
+      }
     } catch (err) {
-      console.warn('Supabase createJob failed, creating locally:', err.message)
+      console.warn('[Supabase createJob] Notice:', err.message)
     }
   }
 
-  const localJob = {
-    id: jobData.id || Date.now(),
-    ...jobData,
-    status: 'active'
-  }
-  savePostedJob(localJob)
-  return { success: true, data: localJob }
+  return { success: true, data: normalizedJob }
 }
 
 // ============================================================================

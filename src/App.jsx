@@ -3161,6 +3161,11 @@ export default function App() {
     window.addEventListener('focus', handleFocusOrVisible)
     document.addEventListener('visibilitychange', handleFocusOrVisible)
 
+    // 4. Background polling interval (every 8 seconds) for automatic live cross-device sync
+    const pollInterval = setInterval(() => {
+      loadJobs()
+    }, 8000)
+
     // Also load workers directory
     fetchWorkersDirectory().then(workersRes => {
       if (workersRes.success && workersRes.data && workersRes.data.length > 0) {
@@ -3171,6 +3176,7 @@ export default function App() {
     return () => {
       if (channel && supabase) supabase.removeChannel(channel)
       bc?.close()
+      clearInterval(pollInterval)
       window.removeEventListener('storage', handleStorage)
       window.removeEventListener('focus', handleFocusOrVisible)
       document.removeEventListener('visibilitychange', handleFocusOrVisible)

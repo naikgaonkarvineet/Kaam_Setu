@@ -1,6 +1,21 @@
 -- ============================================================================
 -- KAAMSETU COMPLETE DATABASE SCHEMA & ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
+--
+-- QUICK FIX: TO ALLOW POSTED JOBS TO APPEAR FOR ALL USERS ACROSS VERCEL & DEVICES,
+-- RUN THIS SCRIPT IN SUPABASE DASHBOARD > SQL EDITOR:
+--
+--   ALTER TABLE public.jobs DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS contractor_id text;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS job_type text;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS wage numeric;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS working_hours text;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS num_laborers_required integer default 1;
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS required_skills text[] default '{}';
+--   ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS is_urgent boolean default false;
+--
+-- ============================================================================
 
 -- Enable UUID extension if not already enabled
 create extension if not exists "uuid-ossp";
