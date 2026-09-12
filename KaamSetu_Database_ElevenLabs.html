@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>KaamSetu — Database & Knowledge Base for ElevenLabs</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;600;700&display=swap');
+
+    @page {
+      size: A4;
+      margin: 14mm 12mm 14mm 12mm;
+      @bottom-right {
+        content: counter(page);
+      }
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', 'Noto Sans Devanagari', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: #1e293b;
+      background: #ffffff;
+      line-height: 1.42;
+      font-size: 10.5px;
+    }
+
+    .cover-header {
+      background: linear-gradient(135deg, #0d3b2e 0%, #17523f 100%);
+      color: white;
+      padding: 22px 24px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+    }
+
+    .brand-tag {
+      display: inline-block;
+      background: #25855a;
+      color: #ffffff;
+      font-weight: 700;
+      font-size: 9.5px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .cover-header h1 {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+    }
+
+    .cover-header h2 {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: #9ae6b4;
+      margin-bottom: 12px;
+    }
+
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      border-top: 1px solid rgba(255,255,255,0.2);
+      padding-top: 10px;
+      font-size: 9.5px;
+      color: #e2e8f0;
+    }
+
+    .metadata-grid strong {
+      display: block;
+      color: #ffffff;
+      font-size: 10.5px;
+    }
+
+    .section {
+      margin-bottom: 18px;
+      page-break-inside: avoid;
+    }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #0f172a;
+      border-left: 4px solid #10b981;
+      padding-left: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-desc {
+      font-size: 10px;
+      color: #64748b;
+      margin-bottom: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+      font-size: 9.5px;
+    }
+
+    th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 700;
+      text-align: left;
+      padding: 6px 8px;
+      border: 1px solid #cbd5e1;
+      font-size: 9px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    td {
+      padding: 6px 8px;
+      border: 1px solid #e2e8f0;
+      vertical-align: top;
+      color: #1e293b;
+    }
+
+    tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+      font-size: 8.5px;
+    }
+
+    .badge-green { background: #dcfce7; color: #15803d; }
+    .badge-blue { background: #e0f2fe; color: #0369a1; }
+    .badge-amber { background: #fef3c7; color: #b45309; }
+    .badge-red { background: #fee2e2; color: #b91c1c; }
+    .badge-purple { background: #f3e8ff; color: #7e22ce; }
+
+    .card-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .item-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.02);
+    }
+
+    .item-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 4px;
+    }
+
+    .item-card h4 {
+      font-size: 11px;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    .item-card p {
+      font-size: 9.5px;
+      color: #475569;
+      margin-bottom: 3px;
+    }
+
+    .skills-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 5px;
+    }
+
+    .skill-chip {
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 8px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+
+    .schema-box {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 8.5px;
+      line-height: 1.4;
+      margin-bottom: 8px;
+    }
+
+    .callout {
+      background: #ecfdf5;
+      border-left: 4px solid #10b981;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-bottom: 10px;
+      font-size: 9.5px;
+      color: #065f46;
+    }
+
+    .callout-title {
+      font-weight: 700;
+      margin-bottom: 2px;
+      font-size: 10px;
+    }
+
+    .qa-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 8px 10px;
+      margin-bottom: 7px;
+      background: #fafafa;
+    }
+
+    .qa-q {
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 3px;
+      font-size: 10px;
+    }
+
+    .qa-a {
+      color: #334155;
+      font-size: 9.5px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- COVER / HEADER -->
+  <div class="cover-header">
+    <span class="brand-tag">KaamSetu Platform Knowledge Base · ElevenLabs AI Integration</span>
+    <h1>कामसेतु (KaamSetu) — Master Database Export</h1>
+    <h2>Verified Blue-Collar Labor Directory, Job Listings, Contractor Work Sites & Live Operations</h2>
+    <div class="metadata-grid">
+      <div><span>Document Type</span><strong>Structured Knowledge Base</strong></div>
+      <div><span>Platform Version</span><strong>KaamSetu 2.4 (Production)</strong></div>
+      <div><span>Database Engine</span><strong>Supabase PostgreSQL</strong></div>
+      <div><span>Export Date</span><strong>September 2026</strong></div>
+    </div>
+  </div>
+
+  <!-- SECTION 1: ELEVENLABS AGENT INSTRUCTIONS -->
+  <div class="section">
+    <div class="section-title">1. ElevenLabs Conversational Voice Agent Persona & Directives</div>
+    <div class="callout">
+      <div class="callout-title">Voice Agent Persona: "KaamSetu Sahayak" (कामसेतु सहायक)</div>
+      You are the official conversational AI assistant for KaamSetu (कामसेतु - "मेहनत का सही दाम, भरोसे का साथ"). You communicate with daily-wage workers, contractors, and household employers in spoken Hindi, Marathi, or English. You help people find verified workers, query job opportunities, check fair wages, understand site requirements, and initiate bookings. Always refer to the exact names, wages, phone numbers, and locations provided in this database.
+    </div>
+  </div>
+
+  <!-- SECTION 2: VERIFIED WORKERS DIRECTORY -->
+  <div class="section">
+    <div class="section-title">
+      <span>2. Verified Skilled Workers Directory (उपलब्ध कुशल कारीगर)</span>
+      <span style="font-size: 9px; font-weight: normal; color: #64748b;">5 Master Records Active</span>
+    </div>
+    <p class="section-desc">Primary repository of pre-screened, KYC-verified skilled artisans with background-checked trust scores, experience levels, and fixed daily wages.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Worker ID</th>
+          <th>Name & Role</th>
+          <th>Primary Trade</th>
+          <th>Phone Number</th>
+          <th>Location / Area</th>
+          <th>Experience</th>
+          <th>Daily Wage</th>
+          <th>Rating & Reviews</th>
+          <th>Languages</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>#501</strong></td>
+          <td><strong>Raju Kumar</strong><br><span style="color:#64748b;">राजू कुमार</span></td>
+          <td><span class="badge badge-green">Masonry</span><br>राजमिस्त्री</td>
+          <td><strong>+91 98765 43210</strong></td>
+          <td>Andheri West, Mumbai</td>
+          <td>5 Years</td>
+          <td><strong>₹850 / day</strong></td>
+          <td>⭐ 4.9 (14 reviews)</td>
+          <td>Hindi, Marathi, Bhojpuri</td>
+        </tr>
+        <tr>
+          <td><strong>#502</strong></td>
+          <td><strong>Dinesh Yadav</strong><br><span style="color:#64748b;">दिनेश यादव</span></td>
+          <td><span class="badge badge-blue">Painting</span><br>पेंटर</td>
+          <td><strong>+91 98334 11223</strong></td>
+          <td>Borivali East, Mumbai</td>
+          <td>4 Years</td>
+          <td><strong>₹750 / day</strong></td>
+          <td>⭐ 4.8 (11 reviews)</td>
+          <td>Hindi, Bhojpuri</td>
+        </tr>
+        <tr>
+          <td><strong>#503</strong></td>
+          <td><strong>Suresh Patil</strong><br><span style="color:#64748b;">सुरेश पाटिल</span></td>
+          <td><span class="badge badge-amber">Carpentry</span><br>बढ़ई</td>
+          <td><strong>+91 98210 99887</strong></td>
+          <td>Thane West, Mumbai</td>
+          <td>7 Years</td>
+          <td><strong>₹950 / day</strong></td>
+          <td>⭐ 5.0 (18 reviews)</td>
+          <td>Marathi, Hindi, English</td>
+        </tr>
+        <tr>
+          <td><strong>#504</strong></td>
+          <td><strong>Deepak Sawant</strong><br><span style="color:#64748b;">दीपक सावंत</span></td>
+          <td><span class="badge badge-purple">Electrician</span><br>इलेक्ट्रीशियन</td>
+          <td><strong>+91 98223 99881</strong></td>
+          <td>Kurla West, Mumbai</td>
+          <td>6 Years</td>
+          <td><strong>₹900 / day</strong></td>
+          <td>⭐ 4.9 (16 reviews)</td>
+          <td>Marathi, Hindi, English</td>
+        </tr>
+        <tr>
+          <td><strong>#505</strong></td>
+          <td><strong>Sunil Paswan</strong><br><span style="color:#64748b;">सुनील पासवान</span></td>
+          <td><span class="badge badge-blue">Plumbing</span><br>प्लंबर</td>
+          <td><strong>+91 99001 22334</strong></td>
+          <td>Goregaon, Mumbai</td>
+          <td>5 Years</td>
+          <td><strong>₹820 / day</strong></td>
+          <td>⭐ 4.7 (9 reviews)</td>
+          <td>Hindi, Maithili</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="card-grid">
+      <div class="item-card">
+        <div class="item-card-header">
+          <h4>Raju Kumar (Masonry Specialist)</h4>
+          <span class="badge badge-green">Verified KYC</span>
+        </div>
+        <p><strong>Phone:</strong> +91 98765 43210 | <strong>Wage:</strong> ₹850/day</p>
+        <p><strong>Address:</strong> Andheri West, Mumbai | <strong>Experience:</strong> 5 Years</p>
+        <div class="skills-row">
+          <span class="skill-chip">Brickwork</span>
+          <span class="skill-chip">Plastering</span>
+          <span class="skill-chip">Tile Base</span>
+          <span class="skill-chip">RCC Layout</span>
+        </div>
+      </div>
+      <div class="item-card">
+        <div class="item-card-header">
+          <h4>Deepak Sawant (Master Electrician)</h4>
+          <span class="badge badge-green">Verified KYC</span>
+        </div>
+        <p><strong>Phone:</strong> +91 98223 99881 | <strong>Wage:</strong> ₹900/day</p>
+        <p><strong>Address:</strong> Kurla West, Mumbai | <strong>Experience:</strong> 6 Years</p>
+        <div class="skills-row">
+          <span class="skill-chip">Conduit Wiring</span>
+          <span class="skill-chip">MCB Setup</span>
+          <span class="skill-chip">Three Phase</span>
+          <span class="skill-chip">Inverter Installation</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 3: ACTIVE JOB POSTINGS -->
+  <div class="section">
+    <div class="section-title">
+      <span>3. Active Job Listings Database (खुले काम की सूची)</span>
+      <span style="font-size: 9px; font-weight: normal; color: #64748b;">5 Open Listings</span>
+    </div>
+    <p class="section-desc">Current open requirements posted by contractors and property developers across Mumbai, Pune, and Ahmedabad.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Job ID</th>
+          <th>Title & Trade</th>
+          <th>Employer / Company</th>
+          <th>Supervisor & Phone</th>
+          <th>Location</th>
+          <th>Daily Wage</th>
+          <th>Workers Needed</th>
+          <th>Hours & Start Date</th>
+          <th>Urgency</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>JOB-01</strong></td>
+          <td><strong>Senior Mason Required</strong><br>Masonry (राजमिस्त्री)</td>
+          <td>Shiv Builders & Infra</td>
+          <td>Shiv Kumar Sharma<br><strong>+91 98201 54321</strong></td>
+          <td>Andheri West, Mumbai</td>
+          <td><strong>₹850</strong></td>
+          <td>3 laborers (2 Mason, 1 Helper)</td>
+          <td>8:30 AM – 5:30 PM<br>Start: Today (Immediate)</td>
+          <td><span class="badge badge-red">URGENT</span></td>
+        </tr>
+        <tr>
+          <td><strong>JOB-02</strong></td>
+          <td><strong>Interior Wall Painter</strong><br>Painting (पेंटर)</td>
+          <td>Naya Ghar Decorators</td>
+          <td>Anil Deshmukh<br><strong>+91 97654 12389</strong></td>
+          <td>Wakad, Pune</td>
+          <td><strong>₹650</strong></td>
+          <td>2 Painters</td>
+          <td>9:00 AM – 6:00 PM<br>Start: Tomorrow</td>
+          <td><span class="badge badge-blue">Standard</span></td>
+        </tr>
+        <tr>
+          <td><strong>JOB-03</strong></td>
+          <td><strong>Cabinet & Modular Carpentry</strong><br>Carpentry (बढ़ई)</td>
+          <td>Green Towers Residency</td>
+          <td>Ramesh Patel<br><strong>+91 94280 87654</strong></td>
+          <td>Bopal, Ahmedabad</td>
+          <td><strong>₹950</strong></td>
+          <td>1 Carpenter</td>
+          <td>8:00 AM – 5:00 PM<br>Start: Immediate</td>
+          <td><span class="badge badge-red">URGENT</span></td>
+        </tr>
+        <tr>
+          <td><strong>JOB-04</strong></td>
+          <td><strong>Site Wiring Electrician</strong><br>Electrician (इलेक्ट्रीशियन)</td>
+          <td>Apex Electrical Works</td>
+          <td>Vikram Jadhav<br><strong>+91 98112 34567</strong></td>
+          <td>Bandra Kurla Complex</td>
+          <td><strong>₹900</strong></td>
+          <td>2 Electricians</td>
+          <td>9:00 AM – 6:00 PM<br>Start: Today</td>
+          <td><span class="badge badge-blue">Standard</span></td>
+        </tr>
+        <tr>
+          <td><strong>JOB-05</strong></td>
+          <td><strong>Commercial Plumbing Layout</strong><br>Plumbing (प्लंबर)</td>
+          <td>AquaCare Solutions</td>
+          <td>Sunil Rao<br><strong>+91 99001 22334</strong></td>
+          <td>Thane West, Mumbai</td>
+          <td><strong>₹820</strong></td>
+          <td>3 (2 Plumber, 1 Laborer)</td>
+          <td>8:30 AM – 5:30 PM<br>Start: Monday</td>
+          <td><span class="badge badge-red">URGENT</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SECTION 4: CONTRACTOR WORK SITES -->
+  <div class="section">
+    <div class="section-title">
+      <span>4. Active Construction Work Sites (चल रही निर्माण साइटें)</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Site ID</th>
+          <th>Project / Site Name</th>
+          <th>Location</th>
+          <th>Supervisor & Mobile</th>
+          <th>Trades Required</th>
+          <th>Crew Filled / Total</th>
+          <th>Daily Wage</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>SITE-101</strong></td>
+          <td><strong>Metro Tower Phase 2</strong><br>मेट्रो टॉवर फ़ेज २</td>
+          <td>Andheri West, Mumbai</td>
+          <td>Shiv Kumar Sharma<br><strong>+91 98201 54321</strong></td>
+          <td>Masonry, Plumbing, General Labor</td>
+          <td><strong>6 of 8 filled</strong> (2 needed)</td>
+          <td>₹850 / day</td>
+          <td><span class="badge badge-red">URGENT</span></td>
+        </tr>
+        <tr>
+          <td><strong>SITE-102</strong></td>
+          <td><strong>Palm Grove Residency</strong><br>पाम ग्रोव रेजिडेंसी</td>
+          <td>Borivali East, Mumbai</td>
+          <td>Ramesh Patel<br><strong>+91 98450 12345</strong></td>
+          <td>Painting, Carpentry</td>
+          <td><strong>4 of 5 filled</strong> (1 needed)</td>
+          <td>₹780 / day</td>
+          <td><span class="badge badge-blue">Active</span></td>
+        </tr>
+        <tr>
+          <td><strong>SITE-103</strong></td>
+          <td><strong>Skyline Commercial Plaza</strong><br>स्काईलाइन कमर्शियल प्लाज़ा</td>
+          <td>BKC, Mumbai</td>
+          <td>Anil Deshmukh<br><strong>+91 97654 12389</strong></td>
+          <td>Electrician, Masonry, Welding</td>
+          <td><strong>7 of 12 filled</strong> (5 needed)</td>
+          <td>₹900 / day</td>
+          <td><span class="badge badge-red">URGENT</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SECTION 5: LIVE BOOKINGS & WEBHOOK DISPATCH REGISTRY -->
+  <div class="section">
+    <div class="section-title">
+      <span>5. Customer Direct Bookings & Automation Webhook Registry</span>
+    </div>
+    <p class="section-desc">When bookings or acceptances happen on KaamSetu, real-time HTTP POST webhooks trigger notifications and emails to customers.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Event</th>
+          <th>Live Webhook URL</th>
+          <th>Method</th>
+          <th>Payload JSON Schema</th>
+          <th>Trigger Condition</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Worker Booked</strong></td>
+          <td><code>https://aframmm.app.n8n.cloud/webhook/worker-booked</code></td>
+          <td><span class="badge badge-green">POST</span></td>
+          <td><code>{ customerName, customerEmail, workerName, service, scheduledFor }</code></td>
+          <td>Contractor or Employer taps "Book Worker"</td>
+        </tr>
+        <tr>
+          <td><strong>Worker Accepted</strong></td>
+          <td><code>https://aframmm.app.n8n.cloud/webhook/worker-accepted</code></td>
+          <td><span class="badge badge-green">POST</span></td>
+          <td><code>{ customerName, customerEmail, workerName, service, scheduledFor }</code></td>
+          <td>Worker taps "Accept Work" (स्वीकार करें)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="callout">
+      <div class="callout-title">Current Pre-Seeded Default Customer Booking Record</div>
+      <strong>Customer:</strong> Vineet Naik Gaonkar | <strong>Email:</strong> naikgaonkarvineet@gmail.com | <strong>Worker:</strong> Raju Kumar | <strong>Trade:</strong> Welding | <strong>Scheduled:</strong> 2026-09-20 10:00 | <strong>Wage:</strong> ₹850 | <strong>Status:</strong> Accepted & Confirmed
+    </div>
+  </div>
+
+  <div class="page-break"></div>
+
+  <!-- SECTION 6: FAIR WAGE BENCHMARK SYSTEM -->
+  <div class="section">
+    <div class="section-title">
+      <span>6. Fair Wage Benchmarks & City Standards (Mumbai Metropolitan Region)</span>
+    </div>
+    <p class="section-desc">Live benchmark rates displayed on KaamSetu to eliminate exploitation and ensure transparent wages for 8-hour daily shifts.</p>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Trade Category</th>
+          <th>Govt Minimum Wage</th>
+          <th>Prevailing City Average</th>
+          <th>Fair Wage Bracket</th>
+          <th>Standard Work Hours</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Masonry (राजमिस्त्री)</strong></td>
+          <td>₹650 / day</td>
+          <td>₹780 / day</td>
+          <td><strong>₹750 – ₹900 / day</strong></td>
+          <td>8:30 AM – 5:30 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>Carpentry (बढ़ई)</strong></td>
+          <td>₹680 / day</td>
+          <td>₹820 / day</td>
+          <td><strong>₹800 – ₹1,000 / day</strong></td>
+          <td>8:00 AM – 5:00 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>Electrician (इलेक्ट्रीशियन)</strong></td>
+          <td>₹700 / day</td>
+          <td>₹850 / day</td>
+          <td><strong>₹820 – ₹1,000 / day</strong></td>
+          <td>9:00 AM – 6:00 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>Plumbing (प्लंबर)</strong></td>
+          <td>₹670 / day</td>
+          <td>₹800 / day</td>
+          <td><strong>₹780 – ₹920 / day</strong></td>
+          <td>8:30 AM – 5:30 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>Painting (पेंटर)</strong></td>
+          <td>₹620 / day</td>
+          <td>₹740 / day</td>
+          <td><strong>₹700 – ₹850 / day</strong></td>
+          <td>9:00 AM – 6:00 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>Welding (वेल्डर)</strong></td>
+          <td>₹700 / day</td>
+          <td>₹850 / day</td>
+          <td><strong>₹800 – ₹950 / day</strong></td>
+          <td>8:30 AM – 5:30 PM (8 hrs)</td>
+        </tr>
+        <tr>
+          <td><strong>General Labor / Helper (सहायक)</strong></td>
+          <td>₹550 / day</td>
+          <td>₹620 / day</td>
+          <td><strong>₹600 – ₹700 / day</strong></td>
+          <td>8:00 AM – 5:00 PM (8 hrs)</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- SECTION 7: CLIENT REVIEWS & TRUST SCORES -->
+  <div class="section">
+    <div class="section-title">
+      <span>7. Verified Client & Contractor Reviews</span>
+    </div>
+    <div class="item-card" style="margin-bottom: 8px;">
+      <div class="item-card-header">
+        <strong>Shiv Kumar Sharma (Contractor · Shiv Builders & Infra)</strong>
+        <span class="badge badge-green">Rating: 5.0 / 5 ★</span>
+      </div>
+      <p><strong>Worker:</strong> Raju Kumar | <strong>Trade:</strong> Masonry Work</p>
+      <p style="font-style: italic;">"Exceptional craftsmanship and strictly punctual. Finished the wall alignment ahead of schedule. Very respectful and skilled worker."</p>
+      <p style="color: #64748b; font-size: 9.5px;">"समय के बेहद पाबंद और काम में पूरी सफाई। दीवार की चिनाई तय समय से पहले पूरी की। बहुत ही मेहनती और ईमानदार कारीगर।"</p>
+    </div>
+
+    <div class="item-card" style="margin-bottom: 8px;">
+      <div class="item-card-header">
+        <strong>Rajesh Wagh (Site Supervisor · Omkar Heights)</strong>
+        <span class="badge badge-green">Rating: 4.8 / 5 ★</span>
+      </div>
+      <p><strong>Worker:</strong> Raju Kumar | <strong>Trade:</strong> Plaster & Brickwork</p>
+      <p style="font-style: italic;">"Worked continuously with my crew for 6 days. Zero wastage of cement and very cooperative with other laborers."</p>
+      <p style="color: #64748b; font-size: 9.5px;">"हमारी टोली के साथ 6 दिन लगातार काम किया। सीमेंट का कोई नुकसान नहीं होने दिया और बाकी मज़दूरों के साथ तालमेल बहुत अच्छा रहा।"</p>
+    </div>
+
+    <div class="item-card">
+      <div class="item-card-header">
+        <strong>Kavita Mehta (Property Owner · Andheri West)</strong>
+        <span class="badge badge-green">Rating: 5.0 / 5 ★</span>
+      </div>
+      <p><strong>Worker:</strong> Raju Kumar | <strong>Trade:</strong> Home Renovation</p>
+      <p style="font-style: italic;">"Fair wage agreed upfront, no hidden demands. Quality of masonry and tile base work was top-notch."</p>
+      <p style="color: #64748b; font-size: 9.5px;">"पहले से तय सही दाम पर बिना किसी रुकावट के पूरा काम किया। राजमिस्त्री काम का स्तर बहुत बढ़िया था।"</p>
+    </div>
+  </div>
+
+  <!-- SECTION 8: ELEVENLABS VOICE AGENT FAQ / KNOWLEDGE RETRIEVAL -->
+  <div class="section">
+    <div class="section-title">
+      <span>8. ElevenLabs Voice Agent Response Handbook & FAQs</span>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q">Q1: I need an electrician in Mumbai today. Who is available?</div>
+      <div class="qa-a"><strong>Agent Answer:</strong> "You can hire Deepak Sawant in Kurla West, Mumbai. He has 6 years of experience with a 4.9-star rating across 16 verified reviews. His daily wage is ₹900. You can reach him directly at +91 98223 99881, or book him on KaamSetu."</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q">Q2: What is the fair daily wage for a mason in Mumbai?</div>
+      <div class="qa-a"><strong>Agent Answer:</strong> "The prevailing city average in Mumbai for masonry work is ₹780 per day, with standard rates ranging between ₹750 and ₹900 for an 8-hour shift. The government minimum wage is ₹650. On KaamSetu, Raju Kumar is available at ₹850 per day with 5 years experience."</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q">Q3: Are there any urgent construction sites hiring laborers right now?</div>
+      <div class="qa-a"><strong>Agent Answer:</strong> "Yes, Metro Tower Phase 2 in Andheri West is urgently hiring 2 more workers for masonry and plumbing at ₹850 per day under Supervisor Shiv Kumar Sharma (+91 98201 54321). Skyline Commercial Plaza in BKC is also urgently hiring 5 workers for electrical and masonry work at ₹900 per day under Anil Deshmukh (+91 97654 12389)."</div>
+    </div>
+
+    <div class="qa-block">
+      <div class="qa-q">Q4: How does a customer book a worker and receive confirmation?</div>
+      <div class="qa-a"><strong>Agent Answer:</strong> "When a contractor or employer books a worker on KaamSetu, a webhook is sent to n8n which emails the customer with booking details. Once the worker taps 'Accept Work' (स्वीकार करें), an immediate confirmation email is sent to the customer (such as naikgaonkarvineet@gmail.com), and the job is marked 'Accepted & Confirmed'."</div>
+    </div>
+  </div>
+
+  <!-- SECTION 9: TECHNICAL DATABASE SCHEMA -->
+  <div class="section">
+    <div class="section-title">
+      <span>9. Supabase PostgreSQL Schema Overview (Technical Reference)</span>
+    </div>
+    <div class="schema-box">
+TABLE users (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  phone_number text UNIQUE NOT NULL,
+  name text NOT NULL,
+  role text NOT NULL CHECK (role IN ('worker', 'contractor', 'needs_workers')),
+  location text,
+  preferred_language text DEFAULT 'hindi',
+  created_at timestamptz DEFAULT now()
+);
+
+TABLE worker_profiles (
+  id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  skills text[] DEFAULT '{}',
+  expertise text,
+  work_experience text,
+  spoken_languages text[] DEFAULT '{}',
+  rating_avg numeric DEFAULT 0
+);
+
+TABLE jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  contractor_id uuid REFERENCES users(id),
+  job_type text NOT NULL,
+  location text NOT NULL,
+  wage numeric NOT NULL,
+  working_hours text,
+  num_laborers_required integer DEFAULT 1,
+  start_date date DEFAULT CURRENT_DATE,
+  is_urgent boolean DEFAULT false,
+  status text DEFAULT 'active' CHECK (status IN ('active', 'closed'))
+);
+
+TABLE applications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id uuid REFERENCES jobs(id),
+  worker_id uuid REFERENCES users(id),
+  wage numeric NOT NULL,
+  status text DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'rejected'))
+);
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- KAAMSETU COMPLETE DATABASE SCHEMA & ROW LEVEL SECURITY (RLS) POLICIES
 -- ============================================================================
 
@@ -8,13 +8,18 @@ create extension if not exists "uuid-ossp";
 -- 1. USERS TABLE
 create table if not exists public.users (
   id uuid primary key default gen_random_uuid(),
-  phone_number text unique not null,
+  phone_number text unique,
+  email text unique,
   name text not null,
   role text not null check (role in ('worker', 'contractor', 'needs_workers')),
   location text,
   preferred_language text check (preferred_language in ('hindi', 'english')) default 'hindi',
   created_at timestamptz default now()
 );
+
+-- Migration for existing databases:
+-- ALTER TABLE public.users ALTER COLUMN phone_number DROP NOT NULL;
+-- ALTER TABLE public.users ADD COLUMN IF NOT EXISTS email text unique;
 
 -- 2. WORKER PROFILES TABLE
 create table if not exists public.worker_profiles (

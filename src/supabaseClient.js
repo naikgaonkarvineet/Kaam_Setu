@@ -1,21 +1,28 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_ANON_KEY
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || import.meta.env.SUPABASE_URL || ''
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.SUPABASE_ANON_KEY || ''
 
-// The app remains usable as a scripted demo until a Supabase project is configured.
-export const supabase = url && key ? createClient(url, key) : null
-
-export async function loadOpenJobs() {
-  if (!supabase) return null
-  const { data, error } = await supabase.from('jobs').select('*, users!jobs_employer_id_fkey(name)').eq('status', 'open').order('created_at', { ascending: false })
-  if (error) throw error
-  return data
+// Check if credentials point to an active configured Supabase project
+export const isSupabaseConfigured = () => {
+  return (
+    Boolean(supabaseUrl) &&
+    Boolean(supabaseAnonKey) &&
+    !supabaseUrl.includes('your-project') &&
+    !supabaseUrl.includes('xyzcompany') &&
+    !supabaseAnonKey.includes('dummyanonkey')
+  )
 }
 
-export async function addWageEntry(entry) {
-  if (!supabase) return null
-  const { data, error } = await supabase.from('wage_entries').insert(entry).select().single()
-  if (error) throw error
-  return data
-}
+// Supabase client instance
+export const supabase = (supabaseUrl && supabaseAnonKey)
+  ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true
+      }
+    })
+  : null
+
+export default supabase
